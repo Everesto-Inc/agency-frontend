@@ -3,7 +3,8 @@ apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: agency-frontend
-  description: "Application agency-frontend of space orchid"
+  title: Autonomous Agency — web app
+  description: "Web app of the agency: sign-in, streamed chat with history, usage board, account, admin (activation board, overview)"
   annotations:
     github.com/project-slug: Everesto-Inc/agency-frontend
     backstage.io/techdocs-ref: dir:.
@@ -14,8 +15,11 @@ metadata:
     everesto.live/trivy: "report"
     everesto.live/semgrep: "on"
     everesto.live/dependabot: "on"
+  tags: [react, typescript, vite, tailwind, nginx]
 spec:
-  type: service
+  type: website
   lifecycle: experimental
   owner: orchid
   system: orchid
+  consumesApis:
+    - agency-api                                # the backend's public API (agency-backend)

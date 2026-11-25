@@ -25,6 +25,7 @@ jobs:
       stack: docker
       runner: ubuntu-24.04-arm
       tests: true
+      test-command: bash ci/test.sh   # typecheck + unit tests + build + entry-chunk budget (in node:22)
       semgrep: true
       sonarqube: false
       trivy: report
