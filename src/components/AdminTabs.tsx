@@ -1,10 +1,11 @@
 import clsx from 'clsx';
-import { FlaskConical, Gauge, Settings2, ShieldAlert, Shield, Users } from 'lucide-react';
+import { FlaskConical, Gauge, Settings2, ShieldAlert, Shield, Timer, Users } from 'lucide-react';
 import { NavLink } from 'react-router';
 
 const TABS = [
   { to: '/admin', label: 'Overview', icon: Shield, end: true },
   { to: '/admin/users', label: 'Users', icon: Users },
+  { to: '/admin/runs', label: 'Runs', icon: Timer },
   { to: '/admin/guardrails', label: 'Guardrails', icon: ShieldAlert },
   { to: '/admin/quality', label: 'Quality', icon: Gauge },
   { to: '/admin/settings', label: 'Settings', icon: Settings2 },

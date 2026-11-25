@@ -87,6 +87,27 @@ const models = [
 const PIC = 'a'.repeat(64);
 const UPLOADS = new Map();
 // admin mock data: guardrail events, quality, eval cases, settings versions (in memory)
+// admin → runs: a slow research question (before the speed fixes) and a fast small-talk one
+const call = (t0, startMs, ms, client_id, task, model, tier, status = 'success') => ({ client_id, task, prompt_ref: null, requested_model: `task-${task}`,
+  route_source: 'task', route_reason: `task '${task}'`, tier, model, attempt: 1, status, error_type: status === 'success' ? null : 'Timeout',
+  cached: false, canary: false, pii_redactions: 0, prompt_tokens: 900, completion_tokens: 200, cost_usd: 0.0008, latency_ms: ms,
+  created_at: new Date(t0 + startMs + ms + 1500).toISOString(), started_at: new Date(t0 + startMs).toISOString() });
+const RUNS = (() => {
+  const a = Date.now() - 3600e3, b = Date.now() - 600e3;
+  const base = { user_id: 'u-1', user_email: 'maya@example.com', error_code: null, cache_hit: false, feedback_score: null, prompt_fingerprint: null };
+  return [
+    { ...base, request_id: 'run-fast', topic: 'ev_research', prompt: 'who are you?', status: 'success', latency_ms: 1300, cost_usd: 0.0002, llm_calls: 1,
+      created_at: new Date(b).toISOString(), calls: [call(b, 150, 1050, 'ev_research', 'smalltalk', 'gemini-flash-lite', 'low')] },
+    { ...base, request_id: 'run-slow', topic: 'ev_research', prompt: 'Range and charging time of the 2024 Kia EV6 in Germany?', status: 'success',
+      latency_ms: 31800, cost_usd: 0.0091, llm_calls: 5, created_at: new Date(a + 4200).toISOString(), calls: [
+        call(a, 0, 4100, 'edge', 'topic_classification', 'gemini-flash-lite', 'low'),
+        call(a, 4600, 6200, 'ev_research', 'intent_parsing', 'gemini-flash-lite', 'low'),
+        call(a, 11200, 5200, 'ev_research', 'extraction', 'gemini-flash-lite', 'low', 'error'),
+        call(a, 16500, 4300, 'ev_research', 'extraction', 'gemini-flash', 'mid'),
+        call(a, 23400, 12100, 'ev_research', 'synthesis', 'gemini-flash', 'mid'),
+      ] },
+  ];
+})();
 const GUARD = [];
 const guard = (kind, action, topic, detail, email, at = new Date()) =>
   GUARD.push({ id: GUARD.length + 1, created_at: at.toISOString(), service: kind === 'pii_masked' ? 'model-gateway' : 'topic-ev-research',
@@ -230,6 +251,19 @@ http.createServer(async (req, res) => {
     const now = new Date().toISOString();
     const conv = hist.get(session_id) ?? { id: session_id, title: prompt.replace(/\s+/g, ' ').slice(0, 80), pinned: false, turns: 0, created_at: now, messages: [] };
     Object.assign(conv, { turns: conv.turns + 1, last_topic: t, updated_at: now });
+    if (!image_ids.length && /^\s*(hi|hello|hey|who are you|thanks|danke|what can you do)\b[\s?!.]*$/i.test(prompt)) {
+      const reply = "Hi! I'm agency — a small team of AI assistants: EV Helper (cars, range, charging costs), Product Finder (best prices) and Finance Analyst (stocks). What would you like to know?";
+      conv.messages.push({ request_id: `m${Date.now()}`, topic: t, prompt, answer: reply, status: 'success', created_at: now, total_tokens: 420, cost_usd: 0.0002, models: ['gemini-flash-lite'], images: [] });
+      hist.set(session_id, conv);
+      res.writeHead(200, { ...CORS, 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
+      const e = (n, d) => res.write(`event: ${n}\ndata: ${JSON.stringify(d)}\n\n`);
+      e('routed', { topic: t, confidence: 0.9, method: 'smalltalk' });
+      await sleep(600);
+      e('token', { type: 'token', content: reply, data: {} });
+      e('usage', { type: 'usage', content: '', data: { total_tokens: 420, cost_usd: 0.0002, models: [{ model: 'gemini-flash-lite', calls: 1 }] } });
+      e('done', { type: 'done', content: '', data: { status: 'success', request_id: conv.messages.at(-1).request_id } });
+      return res.end();
+    }
     const seen = image_ids.length ? `*From your picture${image_ids.length > 1 ? 's' : ''} (mock vision): a white electric SUV, probably a Hyundai Ioniq 5.*\n\n` : '';
     const answer = seen + (!image_ids.length && t === 'ev_research' && /picture|photo|image|show me/i.test(prompt) ? `${ANSWERS[t]}\n\n![2024 Hyundai Ioniq 5](/api/v1/images/${PIC})\n\n*Picture: example.com (mock)*` : ANSWERS[t]);
     const rid = `m${Date.now()}`;
@@ -421,6 +455,8 @@ http.createServer(async (req, res) => {
     res.writeHead(204, CORS); return res.end();
   }
 
+  if (m === 'GET' && p === '/api/v1/admin/runs') return send(res, 200, RUNS.map(({ calls, ...r }) => r));
+  if (m === 'GET' && /^\/api\/v1\/admin\/runs\/[^/]+\/calls$/.test(p)) return send(res, 200, RUNS.find(r => r.request_id === p.split('/')[5])?.calls ?? []);
   if (m === 'GET' && p === '/api/v1/admin/users') {
     const plan = u.searchParams.get('plan');
     return send(res, 200, [...users.values()].filter(x => !plan || x.plan === plan).sort((a, b) => b.created_at.localeCompare(a.created_at)));

@@ -1103,6 +1103,11 @@ export interface components {
             /** Llm Calls */
             llm_calls: number;
             /**
+             * Prompt
+             * @description First 160 characters (PII-masked; null after retention)
+             */
+            prompt?: string | null;
+            /**
              * Prompt Fingerprint
              * @description Prompt versions + A/B arms used
              */
@@ -1113,6 +1118,8 @@ export interface components {
             status: string;
             /** Topic */
             topic: string;
+            /** User Email */
+            user_email?: string | null;
             /** User Id */
             user_id: string;
         };
@@ -1830,6 +1837,12 @@ export interface components {
             cached: boolean;
             /** Canary */
             canary: boolean;
+            /**
+             * Client Id
+             * @description Which service called: edge (routing), a topic, quality (judge)
+             * @default
+             */
+            client_id: string;
             /** Completion Tokens */
             completion_tokens: number;
             /** Cost Usd */
@@ -1857,6 +1870,11 @@ export interface components {
             route_reason: string | null;
             /** Route Source */
             route_source: string;
+            /**
+             * Started At
+             * @description When the call started (timeline)
+             */
+            started_at?: string | null;
             /** Status */
             status: string;
             /** Task */

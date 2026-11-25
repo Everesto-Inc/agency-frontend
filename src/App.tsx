@@ -16,6 +16,7 @@ const AdminGuardrailsPage = lazy(() => import('@/pages/admin/AdminGuardrailsPage
 const AdminQualityPage = lazy(() => import('@/pages/admin/AdminQualityPage'));
 const AdminSettingsPage = lazy(() => import('@/pages/admin/AdminSettingsPage'));
 const AdminExperimentsPage = lazy(() => import('@/pages/admin/AdminExperimentsPage'));
+const AdminRunsPage = lazy(() => import('@/pages/admin/AdminRunsPage'));
 
 export function App() {
   const { state } = useAuth();
@@ -47,6 +48,7 @@ export function App() {
         {isAdmin(me) && <Route path="admin/quality" element={page(<AdminQualityPage />)} />}
         {isAdmin(me) && <Route path="admin/settings" element={page(<AdminSettingsPage />)} />}
         {isAdmin(me) && <Route path="admin/experiments" element={page(<AdminExperimentsPage />)} />}
+        {isAdmin(me) && <Route path="admin/runs" element={page(<AdminRunsPage />)} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
