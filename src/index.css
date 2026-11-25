@@ -1,0 +1,97 @@
+@import 'tailwindcss';
+
+/*
+ * Design language: a board. Bold blue→violet gradient backdrop, light-grey lists (columns), white lifted cards,
+ * friendly coloured labels. Inspired by kanban tools — own colours, own logo, system fonts.
+ * Dark mode: the system's, or the user's choice (html.dark).
+ */
+@theme {
+  --color-brand: #1f5bd8;
+  --color-brand-strong: #1747b0;
+  --color-brand-soft: #e6eefc;
+  --color-board-from: #1f5bd8;
+  --color-board-to: #7b3fe4;
+  --color-surface: #f4f5f7;
+  --color-list: #ebecf0;
+  --color-panel: #ffffff;
+  --color-line: #dfe1e6;
+  --color-ink: #172b4d;
+  --color-muted: #5e6c84;
+  --color-danger: #c9372c;
+  --color-ok: #1f845a;
+  --color-label-green: #4bce97;
+  --color-label-yellow: #f5cd47;
+  --color-label-orange: #fea362;
+  --color-label-red: #f87168;
+  --color-label-purple: #9f8fef;
+  --color-label-blue: #579dff;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --shadow-card: 0 1px 1px rgb(9 30 66 / 0.25), 0 0 1px rgb(9 30 66 / 0.31);
+  --shadow-lift: 0 8px 16px -4px rgb(9 30 66 / 0.25), 0 0 1px rgb(9 30 66 / 0.31);
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  html.dark {
+    --color-brand: #579dff;
+    --color-brand-strong: #85b8ff;
+    --color-brand-soft: #1c2b41;
+    --color-board-from: #0d2a63;
+    --color-board-to: #3b1d74;
+    --color-surface: #1d2125;
+    --color-list: #101214;
+    --color-panel: #22272b;
+    --color-line: #38414a;
+    --color-ink: #dee4ea;
+    --color-muted: #9fadbc;
+    color-scheme: dark;
+  }
+  html { -webkit-tap-highlight-color: transparent; }
+  body { min-height: 100dvh; }
+  :focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }
+}
+
+@utility board-bg {
+  background-image: linear-gradient(135deg, var(--color-board-from) 0%, var(--color-board-to) 100%);
+}
+@utility card {
+  background: var(--color-panel);
+  border-radius: 10px;
+  box-shadow: var(--shadow-card);
+}
+@utility list-col {
+  background: var(--color-list);
+  border-radius: 14px;
+}
+
+@keyframes fadein { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@keyframes caret { 50% { opacity: 0; } }
+/* blinking cursor at the end of an answer that is still streaming */
+.streaming > :last-child::after {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  border-radius: 2px;
+  background: var(--color-brand);
+  animation: caret 1s steps(1) infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-bounce, .animate-pulse { animation: none !important; }
+  .streaming > :last-child::after { animation: none; }
+}
+
+/* Chat answers (markdown) */
+.prose-answer { line-height: 1.65; overflow-wrap: anywhere; }
+.prose-answer p { margin: 0.5em 0; }
+.prose-answer ul { list-style: disc; padding-left: 1.25em; margin: 0.5em 0; }
+.prose-answer ol { list-style: decimal; padding-left: 1.25em; margin: 0.5em 0; }
+.prose-answer a { color: var(--color-brand); text-decoration: underline; }
+.prose-answer code { font-size: 0.9em; background: var(--color-brand-soft); padding: 0.1em 0.3em; border-radius: 4px; }
+.prose-answer pre { overflow-x: auto; background: var(--color-brand-soft); padding: 0.75em; border-radius: 8px; }
+.prose-answer table { display: block; overflow-x: auto; border-collapse: collapse; margin: 0.5em 0; }
+.prose-answer th, .prose-answer td { border: 1px solid var(--color-line); padding: 0.35em 0.6em; text-align: left; }
+.prose-answer h1, .prose-answer h2, .prose-answer h3 { font-weight: 700; margin: 0.8em 0 0.3em; }

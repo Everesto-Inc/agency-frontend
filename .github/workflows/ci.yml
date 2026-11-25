@@ -1,0 +1,36 @@
+# CI for agency-frontend — built on Loop (Backstage "Edit pipeline" can flip the switches below).
+#   Loop: Gitleaks · tests (ci/test.sh: typecheck, unit tests, build, entry-chunk budget) · Semgrep · image build + Trivy
+#   → ghcr.io/everesto-inc/agency-frontend:sha-<7> (pushed from main only)
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', 'mkdocs.yml', 'catalog-info.yaml', '*.md']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  loop:
+    uses: Everesto-Inc/loop/.github/workflows/pipeline.yml@4d70c4efcdad7bd522d60fe13d6c324a83fe0936 # v1.1.2
+    with:
+      stack: docker          # Node app: tests run via test-command (in node:22), the image via the Dockerfile
+      runner: ubuntu-24.04-arm
+      tests: true
+      test-command: bash ci/test.sh
+      semgrep: true
+      sonarqube: false       # turn on once UI tests cover enough (new-code coverage gate is 80 %)
+      trivy: report
+      image: ghcr.io/everesto-inc/agency-frontend
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    permissions:
+      contents: read
+      packages: write        # push + keep the last 5 images in ghcr.io

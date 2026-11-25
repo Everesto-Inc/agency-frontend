@@ -1,0 +1,8 @@
+site_name: Autonomous Agency — web app
+site_description: What the web app does, how it talks to the backend, how to run and deploy it
+repo_url: https://github.com/Everesto-Inc/agency-frontend
+edit_uri: edit/main/docs/
+nav:
+  - Start here: index.md
+plugins:
+  - techdocs-core
