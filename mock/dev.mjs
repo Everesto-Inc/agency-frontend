@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 
 const procs = [
   spawn(process.execPath, ['mock/server.mjs'], { stdio: 'inherit' }),
-  spawn('npx', ['vite'], { stdio: 'inherit', shell: process.platform === 'win32' }),
+  spawn(process.execPath, ['node_modules/vite/bin/vite.js'], { stdio: 'inherit' }), // no shell (works on every OS)
 ];
 const stop = () => { procs.forEach(p => p.kill('SIGTERM')); process.exit(0); };
 process.on('SIGINT', stop);
