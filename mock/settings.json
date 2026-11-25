@@ -1,0 +1,660 @@
+[
+ {
+  "name": "plans",
+  "title": "Plans & limits",
+  "description": "Daily tokens / cost, requests per minute, which assistants each plan has, the plan new accounts get.",
+  "json_schema": {
+   "$defs": {
+    "PlanConfig": {
+     "properties": {
+      "display_name": {
+       "title": "Display Name",
+       "type": "string"
+      },
+      "max_tier": {
+       "$ref": "#/$defs/Tier",
+       "default": "mid"
+      },
+      "topics": {
+       "description": "Entitled topics; '*' = all",
+       "items": {
+        "type": "string"
+       },
+       "title": "Topics",
+       "type": "array"
+      },
+      "daily_token_limit": {
+       "minimum": 0,
+       "title": "Daily Token Limit",
+       "type": "integer"
+      },
+      "daily_cost_limit_usd": {
+       "minimum": 0,
+       "title": "Daily Cost Limit Usd",
+       "type": "number"
+      },
+      "requests_per_minute": {
+       "minimum": 0,
+       "title": "Requests Per Minute",
+       "type": "integer"
+      },
+      "topic_daily_requests": {
+       "additionalProperties": {
+        "type": "integer"
+       },
+       "title": "Topic Daily Requests",
+       "type": "object"
+      },
+      "topic_daily_tokens": {
+       "additionalProperties": {
+        "type": "integer"
+       },
+       "title": "Topic Daily Tokens",
+       "type": "object"
+      }
+     },
+     "required": [
+      "display_name",
+      "daily_token_limit",
+      "daily_cost_limit_usd",
+      "requests_per_minute"
+     ],
+     "title": "PlanConfig",
+     "type": "object"
+    },
+    "Tier": {
+     "enum": [
+      "low",
+      "mid",
+      "high"
+     ],
+     "title": "Tier",
+     "type": "string"
+    }
+   },
+   "properties": {
+    "signup_plan": {
+     "title": "Signup Plan",
+     "type": "string"
+    },
+    "lapsed_plan": {
+     "description": "Effective plan when a paid subscription has expired",
+     "title": "Lapsed Plan",
+     "type": "string"
+    },
+    "plans": {
+     "additionalProperties": {
+      "$ref": "#/$defs/PlanConfig"
+     },
+     "title": "Plans",
+     "type": "object"
+    }
+   },
+   "required": [
+    "signup_plan",
+    "lapsed_plan",
+    "plans"
+   ],
+   "title": "PlansFile",
+   "type": "object"
+  },
+  "file_values": {
+   "signup_plan": "none",
+   "lapsed_plan": "none",
+   "plans": {
+    "none": {
+     "display_name": "No subscription",
+     "max_tier": "low",
+     "topics": [],
+     "daily_token_limit": 0,
+     "daily_cost_limit_usd": 0.0,
+     "requests_per_minute": 0,
+     "topic_daily_requests": {},
+     "topic_daily_tokens": {}
+    },
+    "free": {
+     "display_name": "Free",
+     "max_tier": "mid",
+     "topics": [
+      "ev_research"
+     ],
+     "daily_token_limit": 50000,
+     "daily_cost_limit_usd": 0.05,
+     "requests_per_minute": 10,
+     "topic_daily_requests": {
+      "ev_research": 5
+     },
+     "topic_daily_tokens": {}
+    },
+    "pro": {
+     "display_name": "Pro",
+     "max_tier": "high",
+     "topics": [
+      "*"
+     ],
+     "daily_token_limit": 2000000,
+     "daily_cost_limit_usd": 5.0,
+     "requests_per_minute": 60,
+     "topic_daily_requests": {
+      "ev_research": 100,
+      "product_finder": 100,
+      "finance": 100
+     },
+     "topic_daily_tokens": {}
+    },
+    "internal": {
+     "display_name": "Internal",
+     "max_tier": "high",
+     "topics": [
+      "*"
+     ],
+     "daily_token_limit": 20000000,
+     "daily_cost_limit_usd": 50.0,
+     "requests_per_minute": 120,
+     "topic_daily_requests": {},
+     "topic_daily_tokens": {}
+    }
+   }
+  }
+ },
+ {
+  "name": "guardrails",
+  "title": "Guardrails",
+  "description": "Injection check (off / flag / block), picture limits.",
+  "json_schema": {
+   "$defs": {
+    "InjectionConfig": {
+     "properties": {
+      "mode": {
+       "default": "flag",
+       "enum": [
+        "off",
+        "flag",
+        "block"
+       ],
+       "title": "Mode",
+       "type": "string"
+      },
+      "threshold": {
+       "default": 0.6,
+       "exclusiveMinimum": 0,
+       "maximum": 1,
+       "title": "Threshold",
+       "type": "number"
+      },
+      "llm_check": {
+       "default": false,
+       "title": "Llm Check",
+       "type": "boolean"
+      }
+     },
+     "title": "InjectionConfig",
+     "type": "object"
+    },
+    "PictureLimits": {
+     "properties": {
+      "per_message": {
+       "default": 4,
+       "maximum": 10,
+       "minimum": 1,
+       "title": "Per Message",
+       "type": "integer"
+      },
+      "per_day": {
+       "default": 60,
+       "maximum": 10000,
+       "minimum": 1,
+       "title": "Per Day",
+       "type": "integer"
+      },
+      "max_upload_mb": {
+       "default": 2.0,
+       "exclusiveMinimum": 0,
+       "maximum": 10,
+       "title": "Max Upload Mb",
+       "type": "number"
+      }
+     },
+     "title": "PictureLimits",
+     "type": "object"
+    }
+   },
+   "properties": {
+    "injection": {
+     "$ref": "#/$defs/InjectionConfig",
+     "default": {
+      "mode": "flag",
+      "threshold": 0.6,
+      "llm_check": false
+     }
+    },
+    "pictures": {
+     "$ref": "#/$defs/PictureLimits",
+     "default": {
+      "per_message": 4,
+      "per_day": 60,
+      "max_upload_mb": 2.0
+     }
+    }
+   },
+   "title": "GuardrailsFile",
+   "type": "object"
+  },
+  "file_values": {
+   "injection": {
+    "mode": "flag",
+    "threshold": 0.6,
+    "llm_check": false
+   },
+   "pictures": {
+    "per_message": 4,
+    "per_day": 60,
+    "max_upload_mb": 2.0
+   }
+  }
+ },
+ {
+  "name": "memory",
+  "title": "Chat memory",
+  "description": "How many messages the assistants read word for word, when older ones are folded into the summary, the fast copy's size and lifetime.",
+  "json_schema": {
+   "properties": {
+    "recent": {
+     "default": 4,
+     "maximum": 20,
+     "minimum": 0,
+     "title": "Recent",
+     "type": "integer"
+    },
+    "fold_at_least": {
+     "default": 6,
+     "maximum": 50,
+     "minimum": 2,
+     "title": "Fold At Least",
+     "type": "integer"
+    },
+    "max_turns": {
+     "default": 20,
+     "maximum": 200,
+     "minimum": 2,
+     "title": "Max Turns",
+     "type": "integer"
+    },
+    "ttl_hours": {
+     "default": 24,
+     "maximum": 720,
+     "minimum": 1,
+     "title": "Ttl Hours",
+     "type": "integer"
+    }
+   },
+   "title": "MemoryFile",
+   "type": "object"
+  },
+  "file_values": {
+   "recent": 4,
+   "fold_at_least": 6,
+   "max_turns": 20,
+   "ttl_hours": 24
+  }
+ },
+ {
+  "name": "privacy",
+  "title": "Privacy & retention",
+  "description": "PII masking, how long texts, pictures and logs are kept.",
+  "json_schema": {
+   "$defs": {
+    "PIIConfig": {
+     "properties": {
+      "redact_before_llm": {
+       "default": true,
+       "title": "Redact Before Llm",
+       "type": "boolean"
+      },
+      "redact_in_storage": {
+       "default": true,
+       "title": "Redact In Storage",
+       "type": "boolean"
+      },
+      "entities": {
+       "items": {
+        "enum": [
+         "email",
+         "phone",
+         "credit_card",
+         "iban",
+         "ip_address",
+         "ssn"
+        ],
+        "type": "string"
+       },
+       "title": "Entities",
+       "type": "array"
+      }
+     },
+     "title": "PIIConfig",
+     "type": "object"
+    },
+    "RetentionConfig": {
+     "properties": {
+      "run_text_days": {
+       "default": 30,
+       "minimum": 1,
+       "title": "Run Text Days",
+       "type": "integer"
+      },
+      "llm_calls_days": {
+       "default": 180,
+       "minimum": 1,
+       "title": "Llm Calls Days",
+       "type": "integer"
+      },
+      "eval_results_days": {
+       "default": 365,
+       "minimum": 1,
+       "title": "Eval Results Days",
+       "type": "integer"
+      },
+      "expired_refresh_tokens_days": {
+       "default": 7,
+       "minimum": 1,
+       "title": "Expired Refresh Tokens Days",
+       "type": "integer"
+      },
+      "guardrail_events_days": {
+       "default": 90,
+       "minimum": 1,
+       "title": "Guardrail Events Days",
+       "type": "integer"
+      }
+     },
+     "title": "RetentionConfig",
+     "type": "object"
+    }
+   },
+   "properties": {
+    "pii": {
+     "$ref": "#/$defs/PIIConfig",
+     "default": {
+      "redact_before_llm": true,
+      "redact_in_storage": true,
+      "entities": [
+       "email",
+       "phone",
+       "credit_card",
+       "iban",
+       "ssn"
+      ]
+     }
+    },
+    "retention": {
+     "$ref": "#/$defs/RetentionConfig",
+     "default": {
+      "run_text_days": 30,
+      "llm_calls_days": 180,
+      "eval_results_days": 365,
+      "expired_refresh_tokens_days": 7,
+      "guardrail_events_days": 90
+     }
+    }
+   },
+   "title": "PrivacyFile",
+   "type": "object"
+  },
+  "file_values": {
+   "pii": {
+    "redact_before_llm": true,
+    "redact_in_storage": true,
+    "entities": [
+     "email",
+     "phone",
+     "credit_card",
+     "iban",
+     "ssn"
+    ]
+   },
+   "retention": {
+    "run_text_days": 30,
+    "llm_calls_days": 180,
+    "eval_results_days": 365,
+    "expired_refresh_tokens_days": 7,
+    "guardrail_events_days": 90
+   }
+  }
+ },
+ {
+  "name": "evals",
+  "title": "Quality checks",
+  "description": "Online judge sampling, drift and offline eval settings.",
+  "json_schema": {
+   "$defs": {
+    "DriftConfig": {
+     "properties": {
+      "window_hours": {
+       "default": 24,
+       "minimum": 1,
+       "title": "Window Hours",
+       "type": "integer"
+      },
+      "baseline_days": {
+       "default": 7,
+       "minimum": 1,
+       "title": "Baseline Days",
+       "type": "integer"
+      },
+      "min_runs": {
+       "default": 20,
+       "minimum": 1,
+       "title": "Min Runs",
+       "type": "integer"
+      },
+      "thresholds": {
+       "$ref": "#/$defs/DriftThresholds",
+       "default": {
+        "judge_score_drop": 0.4,
+        "negative_feedback_rate_increase": 0.1,
+        "error_rate_increase": 0.05,
+        "cost_per_run_increase_pct": 30.0,
+        "tier_distribution_jsd": 0.1
+       }
+      },
+      "alert_webhook_env": {
+       "default": "ALERT_WEBHOOK_URL",
+       "title": "Alert Webhook Env",
+       "type": "string"
+      }
+     },
+     "title": "DriftConfig",
+     "type": "object"
+    },
+    "DriftThresholds": {
+     "properties": {
+      "judge_score_drop": {
+       "default": 0.4,
+       "title": "Judge Score Drop",
+       "type": "number"
+      },
+      "negative_feedback_rate_increase": {
+       "default": 0.1,
+       "title": "Negative Feedback Rate Increase",
+       "type": "number"
+      },
+      "error_rate_increase": {
+       "default": 0.05,
+       "title": "Error Rate Increase",
+       "type": "number"
+      },
+      "cost_per_run_increase_pct": {
+       "default": 30,
+       "title": "Cost Per Run Increase Pct",
+       "type": "number"
+      },
+      "tier_distribution_jsd": {
+       "default": 0.1,
+       "title": "Tier Distribution Jsd",
+       "type": "number"
+      }
+     },
+     "title": "DriftThresholds",
+     "type": "object"
+    },
+    "GateConfig": {
+     "properties": {
+      "min_pass_rate": {
+       "default": 0.8,
+       "maximum": 1,
+       "minimum": 0,
+       "title": "Min Pass Rate",
+       "type": "number"
+      },
+      "max_pass_rate_drop": {
+       "default": 0.05,
+       "maximum": 1,
+       "minimum": 0,
+       "title": "Max Pass Rate Drop",
+       "type": "number"
+      },
+      "max_judge_score_drop": {
+       "default": 0.3,
+       "minimum": 0,
+       "title": "Max Judge Score Drop",
+       "type": "number"
+      },
+      "max_cost_increase_pct": {
+       "default": 25,
+       "minimum": 0,
+       "title": "Max Cost Increase Pct",
+       "type": "number"
+      },
+      "max_p95_latency_increase_pct": {
+       "default": 50,
+       "minimum": 0,
+       "title": "Max P95 Latency Increase Pct",
+       "type": "number"
+      }
+     },
+     "title": "GateConfig",
+     "type": "object"
+    },
+    "OfflineEvalConfig": {
+     "properties": {
+      "concurrency": {
+       "default": 3,
+       "maximum": 20,
+       "minimum": 1,
+       "title": "Concurrency",
+       "type": "integer"
+      },
+      "request_timeout_s": {
+       "default": 300,
+       "title": "Request Timeout S",
+       "type": "integer"
+      },
+      "judge_task": {
+       "default": "eval_judge",
+       "title": "Judge Task",
+       "type": "string"
+      }
+     },
+     "title": "OfflineEvalConfig",
+     "type": "object"
+    },
+    "OnlineEvalConfig": {
+     "properties": {
+      "sample_rate": {
+       "default": 0.05,
+       "maximum": 1,
+       "minimum": 0,
+       "title": "Sample Rate",
+       "type": "number"
+      },
+      "max_judged_per_job": {
+       "default": 200,
+       "minimum": 1,
+       "title": "Max Judged Per Job",
+       "type": "integer"
+      }
+     },
+     "title": "OnlineEvalConfig",
+     "type": "object"
+    }
+   },
+   "properties": {
+    "offline": {
+     "$ref": "#/$defs/OfflineEvalConfig",
+     "default": {
+      "concurrency": 3,
+      "request_timeout_s": 300,
+      "judge_task": "eval_judge"
+     }
+    },
+    "gate": {
+     "$ref": "#/$defs/GateConfig",
+     "default": {
+      "min_pass_rate": 0.8,
+      "max_pass_rate_drop": 0.05,
+      "max_judge_score_drop": 0.3,
+      "max_cost_increase_pct": 25.0,
+      "max_p95_latency_increase_pct": 50.0
+     }
+    },
+    "online": {
+     "$ref": "#/$defs/OnlineEvalConfig",
+     "default": {
+      "sample_rate": 0.05,
+      "max_judged_per_job": 200
+     }
+    },
+    "drift": {
+     "$ref": "#/$defs/DriftConfig",
+     "default": {
+      "window_hours": 24,
+      "baseline_days": 7,
+      "min_runs": 20,
+      "thresholds": {
+       "cost_per_run_increase_pct": 30.0,
+       "error_rate_increase": 0.05,
+       "judge_score_drop": 0.4,
+       "negative_feedback_rate_increase": 0.1,
+       "tier_distribution_jsd": 0.1
+      },
+      "alert_webhook_env": "ALERT_WEBHOOK_URL"
+     }
+    }
+   },
+   "title": "EvalsFile",
+   "type": "object"
+  },
+  "file_values": {
+   "offline": {
+    "concurrency": 3,
+    "request_timeout_s": 300,
+    "judge_task": "eval_judge"
+   },
+   "gate": {
+    "min_pass_rate": 0.8,
+    "max_pass_rate_drop": 0.05,
+    "max_judge_score_drop": 0.3,
+    "max_cost_increase_pct": 25.0,
+    "max_p95_latency_increase_pct": 50.0
+   },
+   "online": {
+    "sample_rate": 0.05,
+    "max_judged_per_job": 200
+   },
+   "drift": {
+    "window_hours": 24,
+    "baseline_days": 7,
+    "min_runs": 20,
+    "thresholds": {
+     "judge_score_drop": 0.4,
+     "negative_feedback_rate_increase": 0.1,
+     "error_rate_increase": 0.05,
+     "cost_per_run_increase_pct": 30.0,
+     "tier_distribution_jsd": 0.1
+    },
+    "alert_webhook_env": "ALERT_WEBHOOK_URL"
+   }
+  }
+ }
+]

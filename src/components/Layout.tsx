@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { BarChart3, LogOut, MessageSquare, Moon, Shield, Sun, User, Users } from 'lucide-react';
+import { BarChart3, LogOut, MessageSquare, Moon, Shield, Sun, User } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import { NavLink, Outlet } from 'react-router';
 import { isActivated, isAdmin, useAuth, useMe } from '@/auth/AuthContext';
@@ -28,8 +28,7 @@ export function Layout() {
     ] : []),
     { to: '/account', label: 'Account', icon: <User className="size-5" /> },
     ...(isAdmin(me) ? [
-      { to: '/admin', label: 'Overview', icon: <Shield className="size-5" />, end: true },
-      { to: '/admin/users', label: 'Users', icon: <Users className="size-5" /> },
+      { to: '/admin', label: 'Admin', icon: <Shield className="size-5" /> },   // tabs inside: AdminTabs
     ] : []),
   ];
 

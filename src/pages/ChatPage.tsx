@@ -1,10 +1,10 @@
 import clsx from 'clsx';
-import { ArrowUp, Bot, History, Lock, Paperclip, Plus, Sparkles, Square, X } from 'lucide-react';
-import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from 'react';
+import { ArrowUp, Bot, History, Lock, Paperclip, Plus, Sparkles, Square, ThumbsDown, ThumbsUp, X } from 'lucide-react';
+import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import Markdown, { type Components } from 'react-markdown';
 import { apiUrl } from '@/config';
 import remarkGfm from 'remark-gfm';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router';
 import { api, unwrap } from '@/api/client';
 import { streamChat, type ChatEvent } from '@/api/chatStream';
@@ -25,6 +25,8 @@ type Turn = {
   cost?: number;
   models?: ModelUse[];
   pictures?: SentPic[];
+  requestId?: string;   // from the stream's `done` event (or the history) → 👍/👎
+  feedback?: number | null;
   error?: string;
   done: boolean;
 };
@@ -104,6 +106,7 @@ export default function ChatPage() {
     setTurns(c.messages.map(m => ({
       id: m.request_id, prompt: m.prompt, answer: m.answer, topic: m.topic, done: true,
       pictures: (m.images ?? []).map(i => ({ key: i.id, path: i.path, description: i.description })),
+      requestId: m.request_id, feedback: m.feedback_score,
       tokens: m.total_tokens, cost: m.cost_usd, models: (m.models ?? []).map(model => ({ model })), error: m.status === 'success' || m.status === 'running' ? undefined : `This answer ended with: ${m.status}`,
     })));
   }, [opened.data, conversationId]);
@@ -159,7 +162,7 @@ export default function ChatPage() {
       else if (ev.type === 'token') update(id, t => ({ ...t, answer: (t.answer ?? '') + ev.content, status: undefined }));
       else if (ev.type === 'usage') update(id, t => ({ ...t, tokens: Number(ev.data.total_tokens ?? 0), cost: Number(ev.data.cost_usd ?? 0), models: modelsOf(ev.data.models) }));
       else if (ev.type === 'error') update(id, t => ({ ...t, error: ev.content || 'The assistant failed' }));
-      else if (ev.type === 'done') update(id, t => ({ ...t, done: true, status: undefined }));
+      else if (ev.type === 'done') update(id, t => ({ ...t, done: true, status: undefined, requestId: typeof ev.data.request_id === 'string' ? ev.data.request_id : undefined }));
     };
     try {
       const signal = abort.current.signal;
@@ -256,7 +259,10 @@ export default function ChatPage() {
                       </div>
                     ) : t.done && !t.error && <p className="text-sm italic text-muted">Answer text removed after the retention period</p>}
                     {t.error && <Alert>{t.error}</Alert>}
-                    {t.done && t.tokens != null && <AnswerFooter models={t.models} tokens={t.tokens} cost={t.cost} />}
+                    {t.done && t.tokens != null && (
+                      <AnswerFooter models={t.models} tokens={t.tokens} cost={t.cost}
+                        rate={t.requestId && !t.error ? <Rating session={session} turn={t} onRated={f => update(t.id, x => ({ ...x, feedback: f }))} /> : null} />
+                    )}
                   </article>
                 )}
               </div>
@@ -342,10 +348,53 @@ function SentPicture({ pic }: { pic: SentPic }) {
   );
 }
 
+/** 👍 / 👎 under an answer. A rating becomes a test-case candidate (Admin → Quality); 👎 can say what was wrong. */
+function Rating({ session, turn, onRated }: { session: string; turn: Turn; onRated: (score: number) => void }) {
+  const [asking, setAsking] = useState(false);
+  const [comment, setComment] = useState('');
+  const [sent, setSent] = useState(false);
+  const rate = useMutation({
+    mutationFn: (body: { score: -1 | 0 | 1; comment?: string }) => unwrap(api.POST('/api/v1/conversations/{conversation_id}/messages/{request_id}/feedback', {
+      params: { path: { conversation_id: session, request_id: turn.requestId! } }, body,
+    })),
+    onSuccess: (_, body) => { onRated(body.score); if (body.comment) { setSent(true); setAsking(false); } },
+  });
+  const score = turn.feedback ?? 0;
+  const click = (s: -1 | 1) => {
+    const next = score === s ? 0 : s;        // click again = take it back
+    rate.mutate({ score: next });
+    setAsking(next === -1); setSent(false);
+  };
+  const btn = (s: -1 | 1, Icon: typeof ThumbsUp, label: string) => (
+    <button type="button" onClick={() => click(s)} aria-pressed={score === s} aria-label={label} title={label} disabled={rate.isPending}
+      className={clsx('inline-flex size-7 items-center justify-center rounded-md transition hover:bg-brand-soft',
+        score === s ? (s === 1 ? 'text-green-600' : 'text-red-500') : 'text-muted')}>
+      <Icon className={clsx('size-4', score === s && 'fill-current')} />
+    </button>
+  );
+  return (
+    <span className="flex flex-wrap items-center gap-0.5">
+      {btn(1, ThumbsUp, 'Good answer')}{btn(-1, ThumbsDown, 'Bad answer')}
+      {asking && (
+        <form className="ml-1 flex items-center gap-1" onSubmit={e => { e.preventDefault(); if (comment.trim()) rate.mutate({ score: -1, comment: comment.trim() }); }}>
+          <label htmlFor={`why-${turn.id}`} className="sr-only">What was wrong?</label>
+          <input id={`why-${turn.id}`} autoFocus value={comment} onChange={e => setComment(e.target.value)} maxLength={500}
+            placeholder="What was wrong? (optional)" className="h-7 w-52 rounded-md border border-line bg-surface px-2 text-xs text-ink" />
+          <button type="submit" className="h-7 rounded-md bg-brand px-2 text-xs font-semibold text-white dark:text-slate-950">Send</button>
+        </form>
+      )}
+      {sent && <span className="ml-1 text-green-600">Thanks — noted</span>}
+      {rate.error && <span className="ml-1 text-red-500">{messageOf(rate.error)}</span>}
+      <span aria-hidden className="mx-1">·</span>
+    </span>
+  );
+}
+
 /** Under every answer: which model(s) answered, tokens, cost. */
-function AnswerFooter({ models = [], tokens, cost }: { models?: ModelUse[]; tokens: number; cost?: number }) {
+function AnswerFooter({ models = [], tokens, cost, rate }: { models?: ModelUse[]; tokens: number; cost?: number; rate?: ReactNode }) {
   return (
     <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-line pt-2 text-xs text-muted">
+      {rate}
       {models.length > 0 && (
         <span className="flex flex-wrap items-center gap-1" title="Models that wrote this answer (via the model gateway)">
           <Bot className="size-3.5" aria-label="Answered by" />

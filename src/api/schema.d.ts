@@ -130,6 +130,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/guardrails": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Guardrails that fired: totals, per day, latest events
+         * @description Never contains users' text — only what fired, where, and short technical detail.
+         */
+        get: operations["guardrail_report"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/metrics/models": {
         parameters: {
             query?: never;
@@ -238,6 +258,78 @@ export interface paths {
         get: operations["run_calls"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every editable settings section */
+        get: operations["list_settings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Save a section (validated; live in ~10 s)
+         * @description Send all values as you want them; only what differs from the file is stored. Sending the file values
+         *     (or {} → see reset) means "use the file".
+         */
+        put: operations["update_settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/{name}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Versions of a section, newest first */
+        get: operations["settings_history"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/{name}/rollback/{version_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Make an old version live again (as a new version) */
+        post: operations["rollback_settings"];
         delete?: never;
         options?: never;
         head?: never;
@@ -560,6 +652,27 @@ export interface paths {
         head?: never;
         /** Rename or pin a conversation */
         patch: operations["update_conversation"];
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversation_id}/messages/{request_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rate an answer 👍 / 👎
+         * @description score 1 = 👍, -1 = 👎, 0 = take it back. A rated answer becomes an eval-case candidate (Admin → Quality),
+         *     so bad answers turn into tests. Same as the topic's own /runs/{id}/feedback, but from the chat.
+         */
+        post: operations["rate_answer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/dashboard": {
@@ -911,6 +1024,11 @@ export interface components {
              */
             created_at: string;
             /**
+             * Feedback Score
+             * @description Your rating: 1 👍, -1 👎, 0 / null none
+             */
+            feedback_score?: number | null;
+            /**
              * Images
              * @description Pictures the user sent with this question
              */
@@ -1187,6 +1305,85 @@ export interface components {
             runs: number;
             /** Variant */
             variant: string;
+        };
+        /** FeedbackBody */
+        FeedbackBody: {
+            /**
+             * Comment
+             * @description What was wrong or right (feeds the eval datasets)
+             */
+            comment?: string | null;
+            /**
+             * Score
+             * @description -1 bad, 0 neutral, 1 good
+             * @enum {integer}
+             */
+            score: -1 | 0 | 1;
+        };
+        /** GuardrailDay */
+        GuardrailDay: {
+            /**
+             * Counts
+             * @description kind → events that day
+             */
+            counts: {
+                [key: string]: number;
+            };
+            /** Day */
+            day: string;
+            /** Total */
+            total: number;
+        };
+        /** GuardrailEvent */
+        GuardrailEvent: {
+            /** Action */
+            action: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Detail */
+            detail: string;
+            /** Id */
+            id: number;
+            /** Kind */
+            kind: string;
+            /** Request Id */
+            request_id: string | null;
+            /** Service */
+            service: string;
+            /** Topic */
+            topic: string | null;
+            /** User Email */
+            user_email: string | null;
+            /** User Id */
+            user_id: string | null;
+        };
+        /** GuardrailReport */
+        GuardrailReport: {
+            /** Daily */
+            daily: components["schemas"]["GuardrailDay"][];
+            /** Days */
+            days: number;
+            /** Recent */
+            recent: components["schemas"]["GuardrailEvent"][];
+            /** Totals */
+            totals: components["schemas"]["GuardrailTotal"][];
+        };
+        /** GuardrailTotal */
+        GuardrailTotal: {
+            /** Action */
+            action: string;
+            /** Count */
+            count: number;
+            /** Kind */
+            kind: string;
+            /**
+             * Last At
+             * Format: date-time
+             */
+            last_at: string;
         };
         /** LlmCall */
         LlmCall: {
@@ -1633,6 +1830,64 @@ export interface components {
              */
             path: string;
         };
+        /** SettingsSection */
+        SettingsSection: {
+            /** Description */
+            description: string;
+            /**
+             * File Values
+             * @description config/<name>.yaml as written — the defaults
+             */
+            file_values: {
+                [key: string]: unknown;
+            };
+            /**
+             * Json Schema
+             * @description JSON Schema of the values (for the form)
+             */
+            json_schema: {
+                [key: string]: unknown;
+            };
+            /** Name */
+            name: string;
+            /**
+             * Override
+             * @description What Admin → Settings changed ({} = nothing)
+             */
+            override: {
+                [key: string]: unknown;
+            };
+            /**
+             * Override Rejected
+             * @description Set if the override doesn't validate with the file
+             */
+            override_rejected?: string | null;
+            /** Title */
+            title: string;
+            /**
+             * Values
+             * @description What the services use now: file + override
+             */
+            values: {
+                [key: string]: unknown;
+            };
+            version?: components["schemas"]["Version"] | null;
+        };
+        /** SettingsUpdate */
+        SettingsUpdate: {
+            /**
+             * Comment
+             * @default
+             */
+            comment: string;
+            /**
+             * Values
+             * @description All values as you want them (only differences are stored)
+             */
+            values: {
+                [key: string]: unknown;
+            };
+        };
         /** Today */
         Today: {
             /** By Topic */
@@ -1924,6 +2179,27 @@ export interface components {
             total: components["schemas"]["UsageTotals"];
             /** User Id */
             user_id: string;
+        };
+        /** Version */
+        Version: {
+            /** Author */
+            author: string;
+            /** Comment */
+            comment: string;
+            /**
+             * Content
+             * @description What differed from the file in this version ({} = the file as is)
+             */
+            content: {
+                [key: string]: unknown;
+            };
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
         };
     };
     responses: never;
@@ -2314,6 +2590,60 @@ export interface operations {
             };
         };
     };
+    guardrail_report: {
+        parameters: {
+            query?: {
+                days?: number;
+                /** @description Only this kind in `recent` */
+                kind?: string | null;
+                limit?: number;
+                /** @description Older events (paging): created_at of the last one you have */
+                before?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GuardrailReport"];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     model_performance: {
         parameters: {
             query?: {
@@ -2592,6 +2922,223 @@ export interface operations {
             };
             /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsSection"][];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsSection"];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    settings_history: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Version"][];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rollback_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                version_id: number;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsSection"];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3633,6 +4180,68 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ConversationSummary"];
                 };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Rate limit or daily quota reached (codes RATE_LIMITED / QUOTA_EXCEEDED); see the Retry-After header */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rate_answer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The conversation (= chat session_id) */
+                conversation_id: string;
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedbackBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Missing, invalid or expired access token */
             401: {

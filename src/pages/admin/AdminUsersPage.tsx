@@ -3,6 +3,7 @@ import { Ban, Check, KeyRound, MoreHorizontal, Search } from 'lucide-react';
 import { useMemo, useState, type FormEvent } from 'react';
 import { api, unwrap, type Schemas } from '@/api/client';
 import { messageOf } from '@/api/errors';
+import { AdminTabs } from '@/components/AdminTabs';
 import { useMe } from '@/auth/AuthContext';
 import { Alert, Board, BoardHeader, Button, Card, Label, List, Spinner } from '@/components/ui';
 import { date } from '@/lib/format';
@@ -38,6 +39,7 @@ export default function AdminUsersPage() {
           </label>
         }
       />
+      <AdminTabs />
       {users.isPending && <Spinner light />}
       {users.error && <Alert>{messageOf(users.error)}</Alert>}
       {users.data && (

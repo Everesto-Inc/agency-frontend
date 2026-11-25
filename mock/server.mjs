@@ -3,6 +3,7 @@
 //   Create account → plan "none" (waiting for activation) → activate it as admin on Admin → Users.
 //   Env: MOCK_PORT (default 8000), MOCK_SLOW=1 (slower streaming, to watch the typing bubble).
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import http from 'node:http';
 
 const PORT = Number(process.env.MOCK_PORT ?? 8000);
@@ -84,7 +85,36 @@ const models = [
 ].map(([model, tier, calls, cost_usd, error_rate]) => ({ model, tier, calls, cost_usd, error_rate, cache_hit_rate: 0.1, share_of_cost: cost_usd / 38.4, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }));
 
 const PIC = 'a'.repeat(64);
-const UPLOADS = new Map(); // id → { owner, type, data, session } (in memory, gone on restart)
+const UPLOADS = new Map();
+// admin mock data: guardrail events, quality, eval cases, settings versions (in memory)
+const GUARD = [];
+const guard = (kind, action, topic, detail, email, at = new Date()) =>
+  GUARD.push({ id: GUARD.length + 1, created_at: at.toISOString(), service: kind === 'pii_masked' ? 'model-gateway' : 'topic-ev-research',
+    kind, action, topic, user_id: email ? 'u-' + email.length : null, user_email: email ?? null, request_id: null, detail });
+for (const [kind, action, topic, detail, h] of [
+  ['quota', 'blocked', 'ev_research', 'QUOTA_EXCEEDED', 3], ['pii_masked', 'masked', 'product_finder', 'email ×1, phone ×1', 5],
+  ['grounding', 'dropped', 'ev_research', 'not on www.example-ev.com: range_km', 9], ['injection', 'flagged', 'finance', 'patterns: ignore_instructions, reveal_system_prompt (question, score 0.91)', 26],
+  ['upload_refused', 'blocked', null, 'BAD_REQUEST: Only JPEG, PNG or WebP pictures can be sent', 30], ['rate_limit', 'blocked', 'ev_research', 'RATE_LIMITED', 50],
+  ['grounding', 'dropped', 'product_finder', 'price not on shop.example.fr', 75], ['unsafe_url', 'blocked', 'product_finder', 'host resolves to non-public address: intranet.local', 100],
+  ['pii_masked', 'masked', 'ev_research', 'email ×2', 130], ['quota', 'blocked', 'finance', 'QUOTA_EXCEEDED', 140],
+]) guard(kind, action, topic, detail, 'maya@example.com', new Date(Date.now() - h * 36e5));
+const QUALITY = [
+  { topic: 'ev_research', offline: { id: 1, cases: 24, created_at: new Date(Date.now() - 864e5).toISOString(), gate_passed: true, git_sha: '2da9c25a', label: 'nightly', mean_cost_usd: 0.004, mean_judge_score: 4.3, pass_rate: 0.92 },
+    online: { judge_score_24h: 4.4, judge_score_7d: 4.2, judged_7d: 31 }, drift: { at: new Date().toISOString(), flagged: [], metrics: {} } },
+  { topic: 'product_finder', offline: { id: 2, cases: 18, created_at: new Date(Date.now() - 864e5).toISOString(), gate_passed: false, git_sha: '2da9c25a', label: 'nightly', mean_cost_usd: 0.006, mean_judge_score: 3.6, pass_rate: 0.72 },
+    online: { judge_score_24h: 3.5, judge_score_7d: 3.9, judged_7d: 12 }, drift: { at: new Date().toISOString(), flagged: ['judge_score_drop'], metrics: {} } },
+  { topic: 'finance', offline: null, online: { judge_score_24h: null, judge_score_7d: 4.0, judged_7d: 4 }, drift: null },
+];
+const CASES = [
+  { id: 1, topic: 'ev_research', source_request_id: 'seed-1', prompt: 'Range of the Kia EV6 in winter?', answer: 'About 528 km (WLTP)…', label: 'negative',
+    comment: 'gave the WLTP number, not winter', status: 'candidate', checks: {}, created_at: new Date(Date.now() - 2 * 864e5).toISOString() },
+];
+const SETTINGS = JSON.parse(readFileSync(new URL('./settings.json', import.meta.url), 'utf8'));
+const VERSIONS = [];
+const isObj = x => x && typeof x === 'object' && !Array.isArray(x);
+const merge = (a, b) => (isObj(a) && isObj(b) ? Object.fromEntries([...new Set([...Object.keys(a), ...Object.keys(b)])].map(k => [k, k in b ? merge(a[k], b[k]) : a[k]])) : b);
+const diff = (a, b) => (isObj(a) && isObj(b) ? Object.fromEntries(Object.keys(b).filter(k => JSON.stringify(a[k]) !== JSON.stringify(b[k])).map(k => [k, diff(a[k], b[k])])) : b);
+const negatives = (v, path = []) => (isObj(v) ? Object.entries(v).flatMap(([k, x]) => negatives(x, [...path, k])) : typeof v === 'number' && v < 0 ? [path.join('.')] : []); // id → { owner, type, data, session } (in memory, gone on restart)
 const ANSWERS = {
   ev_research: `**Hyundai Ioniq 5 (2024), Germany**\n\n| Version | Battery | WLTP range |\n|---|---|---|\n| Standard | 63 kWh | 384 km |\n| Long Range RWD | 84 kWh | 570 km |\n\nCharging 10→80 % takes about **18 minutes** on a 350 kW charger. At German home prices (≈ 0.36 €/kWh) a full charge of the 84 kWh battery costs about **27 €**.`,
   product_finder: `Cheapest verified offers for **Sony WH-1000XM5** in France:\n\n1. **279 €** — shop A (in stock, free delivery)\n2. **289 €** — shop B (2–3 days)\n3. **299 €** — shop C\n\nPrices were checked on the shop pages a minute ago.`,
@@ -179,7 +209,10 @@ http.createServer(async (req, res) => {
     Object.assign(conv, { turns: conv.turns + 1, last_topic: t, updated_at: now });
     const seen = image_ids.length ? `*From your picture${image_ids.length > 1 ? 's' : ''} (mock vision): a white electric SUV, probably a Hyundai Ioniq 5.*\n\n` : '';
     const answer = seen + (!image_ids.length && t === 'ev_research' && /picture|photo|image|show me/i.test(prompt) ? `${ANSWERS[t]}\n\n![2024 Hyundai Ioniq 5](/api/v1/images/${PIC})\n\n*Picture: example.com (mock)*` : ANSWERS[t]);
-    conv.messages.push({ request_id: `m${Date.now()}`, topic: t, prompt, answer, status: 'success', created_at: now, total_tokens: 9087, cost_usd: 0.0035, models: ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+    const rid = `m${Date.now()}`;
+    if (/ignore (all )?(previous|prior) instructions|system prompt/i.test(prompt)) guard('injection', 'flagged', t, 'patterns: ignore_instructions (question, score 0.7)', me.email);
+    if (/@|\+?\d[\d ]{7,}/.test(prompt)) guard('pii_masked', 'masked', t, 'email ×1', me.email);
+    conv.messages.push({ request_id: rid, topic: t, prompt, answer, status: 'success', created_at: now, total_tokens: 9087, cost_usd: 0.0035, models: ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
       images: image_ids.map(id => ({ id, path: `/api/v1/images/${id}`, description: 'a white electric SUV, probably a Hyundai Ioniq 5 (mock)' })) });
     hist.set(session_id, conv);
     res.writeHead(200, { ...CORS, 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
@@ -191,7 +224,7 @@ http.createServer(async (req, res) => {
     }
     for (const chunk of answer.match(/[\s\S]{1,6}/g)) { ev('token', { type: 'token', content: chunk, data: {} }); await sleep(SLOW ? 45 : 18); }
     ev('usage', { type: 'usage', content: '', data: { total_tokens: 9087, cost_usd: 0.0035, models: [{ model: 'gemini-2.5-flash', calls: 2 }, { model: 'gemini-2.5-flash-lite', calls: 1 }] } });
-    ev('done', { type: 'done', content: '', data: { status: 'success', request_id: 'mock' } });
+    ev('done', { type: 'done', content: '', data: { status: 'success', request_id: rid } });
     return res.end();
   }
 
@@ -215,6 +248,76 @@ http.createServer(async (req, res) => {
 
   // admin
   if (p.startsWith('/api/v1/admin/') && me.role !== 'admin') return fail(res, 403, 'FORBIDDEN', 'Admins only');
+  // ---- admin: guardrails, quality, settings (in memory) ----
+  if (m === 'GET' && p === '/api/v1/admin/guardrails') {
+    const days = Number(u.searchParams.get('days') ?? 7);
+    const kind = u.searchParams.get('kind');
+    const since = Date.now() - days * 864e5;
+    const inWin = GUARD.filter(e => Date.parse(e.created_at) >= since);
+    const totals = Object.values(inWin.reduce((acc, e) => {
+      const k = `${e.kind}|${e.action}`;
+      acc[k] ??= { kind: e.kind, action: e.action, count: 0, last_at: e.created_at };
+      acc[k].count++; if (e.created_at > acc[k].last_at) acc[k].last_at = e.created_at;
+      return acc;
+    }, {})).sort((a, b) => b.count - a.count);
+    const daily = Array.from({ length: days }, (_, i) => {
+      const d = new Date(Date.now() - (days - 1 - i) * 864e5).toISOString().slice(0, 10);
+      const counts = {}; for (const e of inWin) if (e.created_at.slice(0, 10) === d) counts[e.kind] = (counts[e.kind] ?? 0) + 1;
+      return { day: d, counts, total: Object.values(counts).reduce((a, b) => a + b, 0) };
+    });
+    const recent = inWin.filter(e => !kind || e.kind === kind).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 100);
+    return send(res, 200, { days, totals, daily, recent });
+  }
+  if (m === 'GET' && p === '/api/v1/admin/quality') return send(res, 200, QUALITY);
+  if (m === 'GET' && p === '/api/v1/admin/eval-cases') {
+    const label = u.searchParams.get('label'); const status = u.searchParams.get('status') ?? 'candidate';
+    return send(res, 200, CASES.filter(c => c.status === status && (!label || c.label === label)));
+  }
+  if (m === 'PUT' && p.startsWith('/api/v1/admin/eval-cases/')) {
+    const c = CASES.find(x => x.id === Number(p.split('/').pop()));
+    if (!c) return fail(res, 404, 'NOT_FOUND', 'Eval case not found');
+    c.status = (await body(req)).status;
+    return send(res, 200, { id: c.id, status: c.status });
+  }
+  if (p.startsWith('/api/v1/admin/settings')) {
+    const [, , , , , name, action, vid] = p.split('/');   // /api/v1/admin/settings/{name}/{history|rollback}/{id}
+    const view = s => {
+      const live = VERSIONS.filter(v => v.name === s.name).at(-1);
+      const values = merge(s.file_values, live?.content ?? {});
+      return { ...s, override: live?.content ?? {}, values, version: live ?? null, override_rejected: null };
+    };
+    if (m === 'GET' && !name) return send(res, 200, SETTINGS.map(view));
+    const sec = SETTINGS.find(s => s.name === name);
+    if (!sec) return fail(res, 404, 'NOT_FOUND', `Unknown settings section '${name}'`);
+    const saveVersion = (content, comment) => { VERSIONS.push({ id: VERSIONS.length + 1, name, content, author: me.email, comment, created_at: new Date().toISOString() }); return send(res, 200, view(sec)); };
+    if (m === 'GET' && action === 'history') return send(res, 200, VERSIONS.filter(v => v.name === name).slice().reverse());
+    if (m === 'POST' && action === 'rollback') {
+      const old = VERSIONS.find(v => v.id === Number(vid) && v.name === name);
+      return old ? saveVersion(old.content, `rollback to version #${old.id}`) : fail(res, 404, 'NOT_FOUND', 'Version not found');
+    }
+    if (m === 'PUT' && !action) {
+      const { values, comment = '' } = await body(req);
+      const bad = negatives(values);
+      if (bad.length) return send(res, 422, { error: { code: 'INVALID_SETTINGS', message: 'These values are not valid', request_id: null,
+        details: { errors: bad.map(f => ({ field: f, message: 'Input should be greater than or equal to 0' })) } } });
+      return saveVersion(diff(sec.file_values, values), comment);
+    }
+  }
+  if (m === 'POST' && /^\/api\/v1\/conversations\/[^/]+\/messages\/[^/]+\/feedback$/.test(p)) {
+    const [, , , , cid, , rid] = p.split('/');
+    const msg = convsOf(me).get(cid)?.messages.find(x => x.request_id === rid);
+    if (!msg) return fail(res, 404, 'NOT_FOUND', 'Answer not found');
+    const { score, comment = null } = await body(req);
+    msg.feedback_score = score;
+    if (score) {
+      const old = CASES.find(c => c.source_request_id === rid);
+      const c = old ?? { id: CASES.length + 1, source_request_id: rid, status: 'candidate', checks: {}, created_at: new Date().toISOString() };
+      Object.assign(c, { topic: msg.topic, prompt: msg.prompt, answer: msg.answer, label: score < 0 ? 'negative' : 'positive', comment });
+      if (!old) CASES.push(c);
+    }
+    res.writeHead(204, CORS); return res.end();
+  }
+
   if (m === 'GET' && p === '/api/v1/admin/users') {
     const plan = u.searchParams.get('plan');
     return send(res, 200, [...users.values()].filter(x => !plan || x.plan === plan).sort((a, b) => b.created_at.localeCompare(a.created_at)));

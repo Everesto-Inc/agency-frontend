@@ -3,6 +3,7 @@ import { lazy, Suspense, useState } from 'react';
 import { Link } from 'react-router';
 import { api, unwrap } from '@/api/client';
 import { messageOf } from '@/api/errors';
+import { AdminTabs } from '@/components/AdminTabs';
 import { MonthPicker } from '@/components/MonthPicker';
 import { Alert, Board, BoardHeader, Card, Label, List, Metric, Spinner } from '@/components/ui';
 import { num, pct, short, signedPct, usd } from '@/lib/format';
@@ -23,6 +24,7 @@ export default function AdminOverviewPage() {
   return (
     <>
       <BoardHeader title="Overview" sub={d?.period.label} action={<MonthPicker months={months.data} value={month} onChange={setMonth} />} />
+      <AdminTabs />
       {dash.isPending && <Spinner light />}
       {dash.error && <Alert>{messageOf(dash.error)}</Alert>}
       {d && (
