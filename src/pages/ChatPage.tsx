@@ -440,6 +440,11 @@ function Empty({ onPick }: { onPick: (s: string) => void }) {
           <span className="mb-1.5 block h-2 w-8 rounded-full bg-label-blue" />{x}
         </button>
       ))}
+      <p className="text-xs text-muted sm:col-span-3">
+        EV data: electricity prices <a className="underline" href="https://ec.europa.eu/eurostat" target="_blank" rel="noreferrer">Eurostat</a> ·
+        fuel prices <a className="underline" href="https://energy.ec.europa.eu/data-and-analysis/weekly-oil-bulletin_en" target="_blank" rel="noreferrer">EU Weekly Oil Bulletin</a> ·
+        car specs <a className="underline" href="https://github.com/KilowattApp/open-ev-data" target="_blank" rel="noreferrer">Open EV Data</a> (MIT) · anything else is checked on its source page.
+      </p>
     </div>
   );
 }
