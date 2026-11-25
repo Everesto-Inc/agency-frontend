@@ -58,6 +58,7 @@ Base URL = `API_URL` (runtime, see Deploy). Spec: `../agency-backend/openapi/edg
 | | `GET /api/v1/auth/me/export` → all my data (JSON) | Account |
 | Chat | `POST /api/v1/chat {prompt, session_id?, topic?, stream: true}` → **SSE** | Chat |
 | | `GET /api/v1/topics` → assistants + `entitled` for my plan | Chat |
+| History | `GET /api/v1/conversations?q=` · `GET /conversations/{id}` (messages) · `PATCH /conversations/{id} {title?, pinned?}` · `DELETE /conversations/{id}` | Chat (Chats list, `/c/:id`) |
 | Usage | `GET /api/v1/dashboard/months` → `GET /api/v1/dashboard?month=YYYY-MM` | Usage |
 | Admin | `GET /api/v1/admin/users?plan=none` (waiting for activation) · `PUT /admin/users/{id}/plan {plan}` (activate) · `PUT /admin/users/{id}/password {new_password}` (reset) · `POST /admin/users/{id}/disable` | Admin → Users |
 | | `GET /api/v1/admin/dashboard/months` → `GET /api/v1/admin/dashboard?month=` (cost, users, by topic/model, top users) | Admin → Overview |
@@ -75,6 +76,9 @@ Behaviour to respect:
   `error {content, data.code}` on failure. Parser: `parseSse` in `src/api/chatStream.ts` (tested).
 - **Errors**: always `{error: {code, message, request_id, details}}` → `ApiError` (`src/api/errors.ts`).
 - **CORS**: the backend's `CORS_ALLOWED_ORIGINS` must contain this app's URL (dev: `http://localhost:5173`).
+- **History**: a conversation id **is** the chat `session_id` — open `/c/<id>` → load its messages → keep sending
+  with that `session_id` to continue. Messages are PII-redacted; their text is `null` after the retention period
+  (30 days, backend `config/privacy.yaml`) — show "text removed", keep the title. Deleting erases the text.
 - No email is sent anywhere — "forgot password" = an admin sets a new one.
 
 ## Run locally

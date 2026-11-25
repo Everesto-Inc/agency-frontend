@@ -1,22 +1,24 @@
 import clsx from 'clsx';
-import { ArrowUp, Lock, Plus, Sparkles, Square } from 'lucide-react';
+import { ArrowUp, History, Lock, Plus, Sparkles, Square } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useParams } from 'react-router';
 import { api, unwrap } from '@/api/client';
 import { streamChat, type ChatEvent } from '@/api/chatStream';
 import { messageOf } from '@/api/errors';
+import { ChatHistory, CONVERSATIONS_KEY } from '@/components/ChatHistory';
 import { ThinkingBubble } from '@/components/Thinking';
-import { Alert, BoardHeader, Label, type LabelColor } from '@/components/ui';
+import { Alert, BoardHeader, Label, Spinner, type LabelColor } from '@/components/ui';
 import { num, usd } from '@/lib/format';
 
 type Turn = {
   id: string;
-  prompt: string;
+  prompt: string | null;
   topic?: string;
   status?: string;
-  answer: string;
+  answer: string | null;
   tokens?: number;
   cost?: number;
   error?: string;
@@ -27,17 +29,44 @@ const COLORS: LabelColor[] = ['green', 'yellow', 'purple', 'orange', 'blue', 're
 const newSession = () => crypto.randomUUID().replace(/-/g, '').slice(0, 24);
 
 export default function ChatPage() {
+  const { conversationId } = useParams();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
   const topics = useQuery({ queryKey: ['topics'], queryFn: () => unwrap(api.GET('/api/v1/topics')) });
   const [topic, setTopic] = useState<string | null>(null); // null = auto-route
   const [turns, setTurns] = useState<Turn[]>([]);
   const [prompt, setPrompt] = useState('');
-  const [session, setSession] = useState(newSession);
+  const [session, setSession] = useState(() => conversationId ?? newSession());
+  const [title, setTitle] = useState<string | null>(null);
+  const [drawer, setDrawer] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const busy = turns.some(t => !t.done);
 
+  // open a conversation from the history (not the one this page just started)
+  const opened = useQuery({
+    queryKey: ['conversation', conversationId],
+    enabled: !!conversationId && conversationId !== session,
+    queryFn: () => unwrap(api.GET('/api/v1/conversations/{conversation_id}', { params: { path: { conversation_id: conversationId! } } })),
+  });
+  useEffect(() => {
+    if (!conversationId) { if (!busy && turns.length) reset(false); return; }
+    if (conversationId === session) return;
+    abort.current?.abort();
+  }, [conversationId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const c = opened.data;
+    if (!c || c.id !== conversationId) return;
+    setSession(c.id);
+    setTitle(c.title);
+    setTurns(c.messages.map(m => ({
+      id: m.request_id, prompt: m.prompt, answer: m.answer, topic: m.topic, done: true,
+      tokens: m.total_tokens, cost: m.cost_usd, error: m.status === 'success' || m.status === 'running' ? undefined : `This answer ended with: ${m.status}`,
+    })));
+  }, [opened.data, conversationId]);
+
   const colorOf = (t?: string) => COLORS[Math.max(0, (topics.data ?? []).findIndex(x => x.topic === t)) % COLORS.length];
-  const nameOf = (t?: string) => topics.data?.find(x => x.topic === t)?.display_name ?? t;
+  const nameOf = (t?: string | null) => topics.data?.find(x => x.topic === t)?.display_name ?? t ?? '';
 
   useEffect(() => () => abort.current?.abort(), []);
   useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'smooth', block: 'end' }); }, [turns]);
@@ -49,13 +78,15 @@ export default function ChatPage() {
     const text = prompt.trim();
     if (!text || busy) return;
     const id = crypto.randomUUID();
+    const first = turns.length === 0;
     setTurns(ts => [...ts, { id, prompt: text, answer: '', done: false, status: 'Thinking' }]);
     setPrompt('');
+    if (first) { setTitle(text.length > 80 ? `${text.slice(0, 80)}…` : text); navigate(`/c/${session}`, { replace: !conversationId }); }
     abort.current = new AbortController();
     const on = (ev: ChatEvent) => {
       if (ev.type === 'routed') update(id, t => ({ ...t, topic: ev.topic }));
       else if (ev.type === 'status') update(id, t => ({ ...t, status: ev.content }));
-      else if (ev.type === 'token') update(id, t => ({ ...t, answer: t.answer + ev.content, status: undefined }));
+      else if (ev.type === 'token') update(id, t => ({ ...t, answer: (t.answer ?? '') + ev.content, status: undefined }));
       else if (ev.type === 'usage') update(id, t => ({ ...t, tokens: Number(ev.data.total_tokens ?? 0), cost: Number(ev.data.cost_usd ?? 0) }));
       else if (ev.type === 'error') update(id, t => ({ ...t, error: ev.content || 'The assistant failed' }));
       else if (ev.type === 'done') update(id, t => ({ ...t, done: true, status: undefined }));
@@ -66,6 +97,7 @@ export default function ChatPage() {
       if ((err as Error).name !== 'AbortError') update(id, t => ({ ...t, error: messageOf(err) }));
     } finally {
       update(id, t => ({ ...t, done: true, status: undefined }));
+      qc.invalidateQueries({ queryKey: CONVERSATIONS_KEY }); // the history shows it / moves it to the top
     }
   };
 
@@ -73,55 +105,82 @@ export default function ChatPage() {
     if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send(); }
   };
 
-  const reset = () => { abort.current?.abort(); setTurns([]); setSession(newSession()); };
+  function reset(go = true) {
+    abort.current?.abort();
+    setTurns([]); setTitle(null); setSession(newSession()); setDrawer(false);
+    if (go) navigate('/');
+  }
+
+  const loading = !!conversationId && conversationId !== session && opened.isPending;
 
   return (
     <>
       <BoardHeader
-        title="Ask the agency"
-        sub="Auto picks the right assistant — or choose one."
-        action={turns.length > 0 && (
-          <button onClick={reset} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-white/20 px-3 text-sm font-semibold text-white hover:bg-white/30">
-            <Plus className="size-4" /> New chat
-          </button>
-        )}
+        title={title ?? 'Ask the agency'}
+        sub={title ? undefined : 'Auto picks the right assistant — or choose one.'}
+        action={
+          <div className="flex gap-2">
+            <button onClick={() => setDrawer(true)} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-white/20 px-3 text-sm font-semibold text-white hover:bg-white/30 md:hidden">
+              <History className="size-4" /> Chats
+            </button>
+            {(turns.length > 0 || conversationId) && (
+              <button onClick={() => reset()} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-white/20 px-3 text-sm font-semibold text-white hover:bg-white/30">
+                <Plus className="size-4" /> New chat
+              </button>
+            )}
+          </div>
+        }
       />
 
       <div className="flex flex-col gap-3 md:flex-row md:items-start">
-        {/* assistants: a list on wide screens, a sideways strip on phones */}
-        <section className="list-col p-2 md:sticky md:top-18 md:w-64 md:shrink-0" aria-label="Assistants">
-          <h2 className="px-2 pb-2 pt-1 text-sm font-semibold">Assistants</h2>
-          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 md:mx-0 md:flex-col md:overflow-visible md:px-0 md:pb-0">
-            <TopicCard active={topic === null} onClick={() => setTopic(null)} title="Auto" line="Routes each question" color="blue" icon />
+        {/* history: a list on tablet/desktop */}
+        <aside className="list-col hidden p-2 md:sticky md:top-18 md:block md:max-h-[calc(100dvh-6rem)] md:w-72 md:shrink-0" aria-label="Chat history">
+          <ChatHistory activeId={conversationId} onNew={() => reset()} />
+        </aside>
+
+        {/* history: a drawer on phones */}
+        {drawer && (
+          <div className="fixed inset-0 z-30 md:hidden" role="dialog" aria-modal="true" aria-label="Chat history">
+            <button className="absolute inset-0 bg-black/40" aria-label="Close" onClick={() => setDrawer(false)} />
+            <div className="list-col absolute inset-y-0 left-0 flex w-[85%] max-w-sm flex-col rounded-l-none p-2 pt-[max(0.75rem,env(safe-area-inset-top))] shadow-[var(--shadow-lift)]">
+              <ChatHistory activeId={conversationId} onNew={() => reset()} onNavigate={() => setDrawer(false)} onClose={() => setDrawer(false)} />
+            </div>
+          </div>
+        )}
+
+        {/* the conversation */}
+        <section className="list-col flex min-h-[60dvh] min-w-0 flex-1 flex-col p-2" aria-label="Conversation">
+          {/* assistants as chips */}
+          <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-2" role="group" aria-label="Assistant">
+            <Chip active={topic === null} onClick={() => setTopic(null)} color="blue"><Sparkles className="size-3.5" /> Auto</Chip>
             {(topics.data ?? []).map((t, i) => (
-              <TopicCard key={t.topic} active={topic === t.topic} disabled={!t.entitled}
-                onClick={() => setTopic(t.topic)} title={t.display_name} line={t.entitled ? t.description : 'Not in your plan'}
-                color={COLORS[i % COLORS.length]} />
+              <Chip key={t.topic} active={topic === t.topic} disabled={!t.entitled} onClick={() => setTopic(t.topic)} color={COLORS[i % COLORS.length]}
+                title={t.entitled ? t.description : 'Not in your plan'}>
+                {t.display_name}{!t.entitled && <Lock className="size-3" />}
+              </Chip>
             ))}
           </div>
-        </section>
 
-        {/* the conversation: one wide list of cards */}
-        <section className="list-col flex min-h-[60dvh] min-w-0 flex-1 flex-col p-2" aria-label="Conversation">
           <div className="flex-1 space-y-2 p-1" aria-live="polite">
-            {turns.length === 0 && <Empty onPick={setPrompt} />}
+            {loading && <Spinner label="Opening the conversation" />}
+            {opened.error && <Alert>{messageOf(opened.error)}</Alert>}
+            {!loading && turns.length === 0 && <Empty onPick={setPrompt} />}
             {turns.map(t => (
               <div key={t.id} className="space-y-2">
-                {/* my question: bubble on the right */}
-                <div className="ml-auto w-fit max-w-[85%] animate-[fadein_.25s_ease] rounded-2xl rounded-br-md bg-brand px-3.5 py-2 text-white shadow-[var(--shadow-card)] dark:text-slate-950">
-                  <p className="whitespace-pre-wrap">{t.prompt}</p>
+                <div className={clsx('ml-auto w-fit max-w-[85%] animate-[fadein_.25s_ease] rounded-2xl rounded-br-md px-3.5 py-2 shadow-[var(--shadow-card)]',
+                  t.prompt === null ? 'bg-panel italic text-muted' : 'bg-brand text-white dark:text-slate-950')}>
+                  <p className="whitespace-pre-wrap">{t.prompt ?? 'Question text removed after the retention period'}</p>
                 </div>
-                {/* the answer: thinking bubble first, then the streamed answer in a bubble on the left */}
                 {!t.answer && !t.error && !t.done ? (
                   <ThinkingBubble step={t.status !== 'Thinking' ? t.status : undefined} />
                 ) : (
                   <article className="w-fit max-w-[95%] animate-[fadein_.25s_ease] rounded-2xl rounded-bl-md bg-panel p-3 shadow-[var(--shadow-card)] sm:max-w-[85%] sm:p-4">
                     {t.topic && <div className="mb-1.5"><Label color={colorOf(t.topic)}>{nameOf(t.topic)}</Label></div>}
-                    {t.answer && (
+                    {t.answer ? (
                       <div className={clsx('prose-answer text-[15px]', !t.done && 'streaming')}>
                         <Markdown remarkPlugins={[remarkGfm]}>{t.answer}</Markdown>
                       </div>
-                    )}
+                    ) : t.done && !t.error && <p className="text-sm italic text-muted">Answer text removed after the retention period</p>}
                     {t.error && <Alert>{t.error}</Alert>}
                     {t.done && t.tokens != null && (
                       <div className="mt-2 border-t border-line pt-2 text-xs text-muted">{num(t.tokens)} tokens · {usd(t.cost)}</div>
@@ -154,20 +213,17 @@ export default function ChatPage() {
   );
 }
 
-function TopicCard({ title, line, color, active, disabled, onClick, icon }:
-  { title: string; line: string; color: LabelColor; active: boolean; disabled?: boolean; onClick: () => void; icon?: boolean }) {
+function Chip({ active, disabled, onClick, color, title, children }:
+  { active: boolean; disabled?: boolean; onClick: () => void; color: LabelColor; title?: string; children: React.ReactNode }) {
   return (
-    <button type="button" onClick={onClick} disabled={disabled} aria-pressed={active}
+    <button type="button" onClick={onClick} disabled={disabled} aria-pressed={active} title={title}
       className={clsx(
-        'card w-44 shrink-0 p-3 text-left transition md:w-full',
-        active ? 'ring-2 ring-brand' : 'hover:shadow-[var(--shadow-lift)]',
-        disabled && 'cursor-not-allowed opacity-55',
+        'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-sm font-semibold transition',
+        active ? 'bg-ink text-white dark:bg-white dark:text-slate-900' : 'bg-panel shadow-[var(--shadow-card)] hover:shadow-[var(--shadow-lift)]',
+        disabled && 'cursor-not-allowed opacity-50',
       )}>
-      <span className={clsx('mb-1.5 block h-2 w-10 rounded-full', `bg-label-${color}`)} />
-      <span className="flex items-center gap-1.5 font-semibold">
-        {icon && <Sparkles className="size-4 text-brand" />}{title}{disabled && <Lock className="size-3.5 text-muted" />}
-      </span>
-      <span className="mt-0.5 line-clamp-2 block text-xs text-muted">{line}</span>
+      {!active && <span className={clsx('size-2 rounded-full', `bg-label-${color}`)} />}
+      {children}
     </button>
   );
 }

@@ -44,6 +44,28 @@ const userOf = req => {
 };
 const pairFor = u => ({ access_token: tokenFor(u), refresh_token: tokenFor(u), expires_in: 900, plan: u.plan, token_type: 'bearer' });
 
+// ---- in-memory chat history (per user email) ---------------------------------------------------------------------
+const convs = new Map(); // email → Map(id → { id, title, pinned, turns, last_topic, created_at, updated_at, messages })
+const convsOf = u => { if (!convs.has(u.email)) convs.set(u.email, new Map()); return convs.get(u.email); };
+const ago = h => new Date(Date.now() - h * 3600_000).toISOString();
+const seedFor = u => {
+  const m = convsOf(u);
+  if (m.size) return;
+  [
+    ['Charging cost of a Tesla Model 3 at home', 'ev_research', 1, true],
+    ['Best price for an iPad Air M2', 'product_finder', 3, false],
+    ['Is NVIDIA overvalued?', 'finance', 26, false],
+    ['Kia EV6 vs Ioniq 5 range in winter', 'ev_research', 80, false],
+    ['Cheapest Dyson V15 in Germany', 'product_finder', 400, false],
+  ].forEach(([title, topic, h, pinned], i) => {
+    const id = `seed${i}${u.id.slice(-4)}`;
+    m.set(id, { id, title, pinned, turns: 1, last_topic: topic, created_at: ago(h), updated_at: ago(h), messages: [
+      { request_id: `${id}-1`, topic, prompt: title + '?', answer: i === 4 ? null : ANSWERS[topic], status: 'success', created_at: ago(h), total_tokens: 8800, cost_usd: 0.0031 },
+    ].map(x => (i === 4 ? { ...x, prompt: null } : x)) });
+  });
+};
+const summary = ({ messages, ...c }) => c;
+
 // ---- sample usage ----------------------------------------------------------------------------------------------
 const totals = (c, r, t) => ({ cost_usd: c, runs: r, total_tokens: t, prompt_tokens: Math.round(t * 0.7), completion_tokens: Math.round(t * 0.3), llm_calls: r * 3, cached_runs: 2 });
 const daily = Array.from({ length: 25 }, (_, i) => ({ day: `2026-11-${String(i + 1).padStart(2, '0')}`, cost_usd: +(Math.abs(Math.sin(i / 2.3)) * 0.4 + 0.05).toFixed(3), runs: 3 + (i % 5), total_tokens: 20000 + i * 900, llm_calls: 9, by_topic: {} }));
@@ -121,8 +143,16 @@ http.createServer(async (req, res) => {
   }
   if (m === 'POST' && p === '/api/v1/chat') {
     if (me.plan === 'none') return fail(res, 403, 'SUBSCRIPTION_REQUIRED', 'Your account is waiting for activation');
-    const { prompt = '', topic } = await body(req);
-    const t = topic ?? route(prompt);
+    const { prompt = '', topic, session_id = 'default' } = await body(req);
+    seedFor(me);
+    const hist = convsOf(me);
+    // follow-ups without a clear keyword stay with the conversation's assistant
+    const t = topic ?? (/stock|share|invest|earnings|valu|cheap|price|buy|shop|offer|range|battery|charg|ev\b/i.test(prompt) ? route(prompt) : hist.get(session_id)?.last_topic ?? route(prompt));
+    const now = new Date().toISOString();
+    const conv = hist.get(session_id) ?? { id: session_id, title: prompt.replace(/\s+/g, ' ').slice(0, 80), pinned: false, turns: 0, created_at: now, messages: [] };
+    Object.assign(conv, { turns: conv.turns + 1, last_topic: t, updated_at: now });
+    conv.messages.push({ request_id: `m${Date.now()}`, topic: t, prompt, answer: ANSWERS[t], status: 'success', created_at: now, total_tokens: 9087, cost_usd: 0.0035 });
+    hist.set(session_id, conv);
     res.writeHead(200, { ...CORS, 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
     const ev = (name, data) => res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
     ev('routed', { topic: t, confidence: 0.94, method: topic ? 'explicit' : 'keywords' });
@@ -134,6 +164,24 @@ http.createServer(async (req, res) => {
     ev('usage', { type: 'usage', content: '', data: { total_tokens: 9087, cost_usd: 0.0035 } });
     ev('done', { type: 'done', content: '', data: { status: 'success', request_id: 'mock' } });
     return res.end();
+  }
+
+  // chat history
+  if (p === '/api/v1/conversations' && m === 'GET') {
+    seedFor(me);
+    const q = (u.searchParams.get('q') ?? '').toLowerCase();
+    const list = [...convsOf(me).values()].filter(c => !q || c.title.toLowerCase().includes(q))
+      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.updated_at.localeCompare(a.updated_at));
+    return send(res, 200, list.map(summary));
+  }
+  const conv = p.match(/^\/api\/v1\/conversations\/([^/]+)$/);
+  if (conv) {
+    seedFor(me);
+    const c = convsOf(me).get(conv[1]);
+    if (!c) return fail(res, 404, 'NOT_FOUND', 'Conversation not found');
+    if (m === 'GET') return send(res, 200, c);
+    if (m === 'PATCH') { const b = await body(req); if (b.title) c.title = b.title; if (b.pinned != null) c.pinned = b.pinned; return send(res, 200, summary(c)); }
+    if (m === 'DELETE') { convsOf(me).delete(conv[1]); return send(res, 204); }
   }
 
   // admin

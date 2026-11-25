@@ -34,6 +34,7 @@ export function App() {
     <Routes>
       <Route element={<Layout />}>
         <Route index element={page(active ? <ChatPage /> : <PendingPage />)} />
+        <Route path="c/:conversationId" element={active ? page(<ChatPage />) : <Navigate to="/" replace />} />
         <Route path="usage" element={active ? page(<UsagePage />) : <Navigate to="/" replace />} />
         <Route path="account" element={page(<AccountPage />)} />
         {isAdmin(me) && <Route path="admin" element={page(<AdminOverviewPage />)} />}
