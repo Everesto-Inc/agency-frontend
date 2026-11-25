@@ -17,7 +17,8 @@ run() {
   [ "$size" -lt 133120 ] || { echo "entry chunk too big"; exit 1; }
 }
 
-if [ "${INSIDE_NODE:-}" = "1" ] || ! command -v docker >/dev/null 2>&1; then
+# Docker only if it actually runs (installed-but-stopped Docker Desktop → use the local Node)
+if [ "${INSIDE_NODE:-}" = "1" ] || ! docker info >/dev/null 2>&1; then
   run
 else
   # own node_modules + dist inside the container (anonymous volumes): never replaces the host's (other OS/arch)

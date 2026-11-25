@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { Loader2 } from 'lucide-react';
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
+import { useId, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
 
 export function Button({ variant = 'primary', busy, className, children, ...rest }:
   ButtonHTMLAttributes<HTMLButtonElement> & { variant?: 'primary' | 'subtle' | 'danger' | 'light'; busy?: boolean }) {
@@ -24,18 +24,23 @@ export function Button({ variant = 'primary', busy, className, children, ...rest
 }
 
 export function Input({ label, hint, className, ...rest }: InputHTMLAttributes<HTMLInputElement> & { label: string; hint?: string }) {
+  const hintId = useId();
   return (
-    <label className="block space-y-1.5">
-      <span className="text-xs font-bold uppercase tracking-wide text-muted">{label}</span>
-      <input
-        {...rest}
-        className={clsx(
-          'block min-h-11 w-full rounded-lg border-2 border-line bg-panel px-3 text-base placeholder:text-muted focus:border-brand focus:outline-none sm:text-sm',
-          className,
-        )}
-      />
-      {hint && <span className="block text-xs text-muted">{hint}</span>}
-    </label>
+    <div className="space-y-1.5">
+      <label className="block space-y-1.5">
+        <span className="text-xs font-bold uppercase tracking-wide text-muted">{label}</span>
+        <input
+          {...rest}
+          aria-describedby={hint ? hintId : undefined}
+          className={clsx(
+            'block min-h-11 w-full rounded-lg border-2 border-line bg-panel px-3 text-base placeholder:text-muted focus:border-brand focus:outline-none sm:text-sm',
+            className,
+          )}
+        />
+      </label>
+      {/* outside the label: read as a description, not as part of the field's name */}
+      {hint && <span id={hintId} className="block text-xs text-muted">{hint}</span>}
+    </div>
   );
 }
 
