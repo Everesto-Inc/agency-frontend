@@ -1,6 +1,6 @@
 import clsx from 'clsx';
-import { ArrowUp, Bot, History, Lock, Plus, Sparkles, Square } from 'lucide-react';
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { ArrowUp, Bot, History, Lock, Paperclip, Plus, Sparkles, Square, X } from 'lucide-react';
+import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type FormEvent, type KeyboardEvent } from 'react';
 import Markdown, { type Components } from 'react-markdown';
 import { apiUrl } from '@/config';
 import remarkGfm from 'remark-gfm';
@@ -13,6 +13,7 @@ import { ChatHistory, CONVERSATIONS_KEY } from '@/components/ChatHistory';
 import { ThinkingBubble } from '@/components/Thinking';
 import { Alert, BoardHeader, Label, Spinner, type LabelColor } from '@/components/ui';
 import { num, usd } from '@/lib/format';
+import { acceptPictures, loadPrivatePicture, MAX_PICTURES, pick, uploadPicture, type Picked } from '@/lib/pictures';
 
 type Turn = {
   id: string;
@@ -23,9 +24,13 @@ type Turn = {
   tokens?: number;
   cost?: number;
   models?: ModelUse[];
+  pictures?: SentPic[];
   error?: string;
   done: boolean;
 };
+
+/** A picture in the user's bubble: a local preview (just sent) or a stored one (history, loaded with the token). */
+type SentPic = { key: string; url?: string; path?: string; description?: string | null };
 
 type ModelUse = { model: string; calls?: number };
 
@@ -63,9 +68,18 @@ export default function ChatPage() {
   const [topic, setTopic] = useState<string | null>(null); // null = auto-route
   const [turns, setTurns] = useState<Turn[]>([]);
   const [prompt, setPrompt] = useState('');
-  const [session, setSession] = useState(() => conversationId ?? newSession());
+  // chats started on this page or already loaded: never fetched again (a refetch would clobber a streaming answer)
+  const known = useRef(new Set<string>());
+  const [session, setSession] = useState(() => {
+    if (conversationId) return conversationId;  // opened by address (reload, link) → still fetched below
+    const s = newSession(); known.current.add(s); return s;
+  });
   const [title, setTitle] = useState<string | null>(null);
   const [drawer, setDrawer] = useState(false);
+  const [picked, setPicked] = useState<Picked[]>([]);   // chosen, NOT uploaded yet (that happens on Send)
+  const [pickNote, setPickNote] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
   const abort = useRef<AbortController | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
   const busy = turns.some(t => !t.done);
@@ -73,7 +87,7 @@ export default function ChatPage() {
   // open a conversation from the history (not the one this page just started)
   const opened = useQuery({
     queryKey: ['conversation', conversationId],
-    enabled: !!conversationId && conversationId !== session,
+    enabled: !!conversationId && !known.current.has(conversationId),
     queryFn: () => unwrap(api.GET('/api/v1/conversations/{conversation_id}', { params: { path: { conversation_id: conversationId! } } })),
   });
   useEffect(() => {
@@ -84,10 +98,12 @@ export default function ChatPage() {
   useEffect(() => {
     const c = opened.data;
     if (!c || c.id !== conversationId) return;
+    known.current.add(c.id);
     setSession(c.id);
     setTitle(c.title);
     setTurns(c.messages.map(m => ({
       id: m.request_id, prompt: m.prompt, answer: m.answer, topic: m.topic, done: true,
+      pictures: (m.images ?? []).map(i => ({ key: i.id, path: i.path, description: i.description })),
       tokens: m.total_tokens, cost: m.cost_usd, models: (m.models ?? []).map(model => ({ model })), error: m.status === 'success' || m.status === 'running' ? undefined : `This answer ended with: ${m.status}`,
     })));
   }, [opened.data, conversationId]);
@@ -100,14 +116,41 @@ export default function ChatPage() {
 
   const update = (id: string, f: (t: Turn) => Turn) => setTurns(ts => ts.map(t => (t.id === id ? f(t) : t)));
 
+  async function addFiles(files: File[]) {
+    const { take, note } = acceptPictures(picked.length, files);
+    setPickNote(note);
+    if (!take.length) return;
+    try {
+      const fresh = await pick(take.map(i => files[i]));
+      setPicked(p => [...p, ...fresh].slice(0, MAX_PICTURES));
+    } catch {
+      setPickNote('Could not read this picture — try a JPEG or PNG');
+    }
+  }
+  const unpick = (key: string) => setPicked(p => {
+    p.filter(x => x.key === key).forEach(x => URL.revokeObjectURL(x.url));
+    return p.filter(x => x.key !== key);
+  });
+  const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = [...e.clipboardData.files].filter(f => f.type.startsWith('image/'));
+    if (files.length) { e.preventDefault(); addFiles(files); }
+  };
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault(); setDragging(false);
+    if (e.dataTransfer.files.length) addFiles([...e.dataTransfer.files]);
+  };
+
   const send = async (e?: FormEvent) => {
     e?.preventDefault();
-    const text = prompt.trim();
+    const pics = picked;
+    const text = prompt.trim() || (pics.length ? (pics.length > 1 ? 'What is in these pictures?' : 'What is in this picture?') : '');
     if (!text || busy) return;
     const id = crypto.randomUUID();
     const first = turns.length === 0;
-    setTurns(ts => [...ts, { id, prompt: text, answer: '', done: false, status: 'Thinking' }]);
-    setPrompt('');
+    // shown at once from the browser's own copy; the upload runs while the assistant is "thinking"
+    setTurns(ts => [...ts, { id, prompt: text, answer: '', done: false, status: pics.length ? 'Looking at your picture' : 'Thinking',
+      pictures: pics.map(p => ({ key: p.key, url: p.url })) }]);
+    setPrompt(''); setPicked([]); setPickNote(null);
     if (first) { setTitle(text.length > 80 ? `${text.slice(0, 80)}…` : text); navigate(`/c/${session}`, { replace: !conversationId }); }
     abort.current = new AbortController();
     const on = (ev: ChatEvent) => {
@@ -119,7 +162,9 @@ export default function ChatPage() {
       else if (ev.type === 'done') update(id, t => ({ ...t, done: true, status: undefined }));
     };
     try {
-      await streamChat({ prompt: text, session_id: session, topic }, on, abort.current.signal);
+      const signal = abort.current.signal;
+      const imageIds = await Promise.all(pics.map(p => uploadPicture(p.blob, session, signal)));
+      await streamChat({ prompt: text, session_id: session, topic, image_ids: imageIds }, on, signal);
     } catch (err) {
       if ((err as Error).name !== 'AbortError') update(id, t => ({ ...t, error: messageOf(err) }));
     } finally {
@@ -134,11 +179,12 @@ export default function ChatPage() {
 
   function reset(go = true) {
     abort.current?.abort();
-    setTurns([]); setTitle(null); setSession(newSession()); setDrawer(false);
+    const s = newSession(); known.current.add(s);
+    setTurns([]); setTitle(null); setSession(s); setDrawer(false);
     if (go) navigate('/');
   }
 
-  const loading = !!conversationId && conversationId !== session && opened.isPending;
+  const loading = !!conversationId && !known.current.has(conversationId) && opened.isPending;
 
   return (
     <>
@@ -196,6 +242,7 @@ export default function ChatPage() {
               <div key={t.id} className="space-y-2">
                 <div className={clsx('ml-auto w-fit max-w-[85%] animate-[fadein_.25s_ease] rounded-2xl rounded-br-md px-3.5 py-2 shadow-[var(--shadow-card)]',
                   t.prompt === null ? 'bg-panel italic text-muted' : 'bg-brand text-white dark:text-slate-950')}>
+                  {t.pictures && t.pictures.length > 0 && <PictureStrip pictures={t.pictures} />}
                   <p className="whitespace-pre-wrap">{t.prompt ?? 'Question text removed after the retention period'}</p>
                 </div>
                 {!t.answer && !t.error && !t.done ? (
@@ -217,10 +264,34 @@ export default function ChatPage() {
             <div ref={bottom} />
           </div>
 
-          <form onSubmit={send} className="card sticky bottom-20 mt-2 flex items-end gap-2 p-2 md:bottom-3">
+          <form onSubmit={send} onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={onDrop}
+            className={clsx('card sticky bottom-20 mt-2 p-2 md:bottom-3', dragging && 'ring-2 ring-brand')}>
+            {dragging && <p className="px-2 pb-1 text-sm font-semibold text-brand">Drop the picture to add it</p>}
+            {picked.length > 0 && (
+              <ul className="flex gap-2 px-1 pb-2" aria-label="Pictures to send">
+                {picked.map(p => (
+                  <li key={p.key} className="relative">
+                    <img src={p.url} alt={p.name} className="size-16 rounded-lg border border-line object-cover" />
+                    <button type="button" onClick={() => unpick(p.key)} aria-label={`Remove ${p.name}`}
+                      className="absolute -right-1.5 -top-1.5 inline-flex size-5 items-center justify-center rounded-full bg-ink text-white shadow">
+                      <X className="size-3" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {pickNote && <p className="px-2 pb-1 text-xs text-red-600 dark:text-red-400" role="status">{pickNote}</p>}
+            <div className="flex items-end gap-2">
+            <input ref={fileInput} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden
+              onChange={e => { addFiles([...(e.target.files ?? [])]); e.target.value = ''; }} />
+            <button type="button" onClick={() => fileInput.current?.click()} disabled={picked.length >= MAX_PICTURES}
+              aria-label="Add a picture" title={`Add a picture (or paste / drop one) — up to ${MAX_PICTURES}`}
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-muted hover:bg-brand-soft hover:text-ink disabled:opacity-40">
+              <Paperclip className="size-5" />
+            </button>
             <label htmlFor="prompt" className="sr-only">Your question</label>
             <textarea
-              id="prompt" rows={1} value={prompt} onChange={e => setPrompt(e.target.value)} onKeyDown={onKey}
+              id="prompt" rows={1} value={prompt} onChange={e => setPrompt(e.target.value)} onKeyDown={onKey} onPaste={onPaste}
               placeholder={topic ? `Ask ${nameOf(topic)}…` : 'Ask anything…'}
               className="max-h-40 min-h-11 flex-1 resize-none bg-transparent px-2 py-2.5 text-base outline-none placeholder:text-muted field-sizing-content"
             />
@@ -228,13 +299,46 @@ export default function ChatPage() {
               <button type="button" onClick={() => abort.current?.abort()} aria-label="Stop"
                 className="inline-flex size-11 items-center justify-center rounded-lg bg-ink text-white"><Square className="size-4" /></button>
             ) : (
-              <button type="submit" disabled={!prompt.trim()} aria-label="Send"
+              <button type="submit" disabled={!prompt.trim() && picked.length === 0} aria-label="Send"
                 className="inline-flex size-11 items-center justify-center rounded-lg bg-brand text-white disabled:opacity-40 dark:text-slate-950"><ArrowUp className="size-5" /></button>
             )}
+            </div>
           </form>
         </section>
       </div>
     </>
+  );
+}
+
+/** Pictures in the user's bubble. Just sent: the browser's own copy. From the history: loaded with the token
+ *  (only the owner may see them). The description is what the assistants got. */
+function PictureStrip({ pictures }: { pictures: SentPic[] }) {
+  return (
+    <div className="mb-1.5 flex flex-wrap justify-end gap-1.5">
+      {pictures.map(p => <SentPicture key={p.key} pic={p} />)}
+    </div>
+  );
+}
+
+function SentPicture({ pic }: { pic: SentPic }) {
+  const [src, setSrc] = useState(pic.url ?? null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (pic.url || !pic.path) return;
+    const ctl = new AbortController();
+    let made: string | null = null;
+    loadPrivatePicture(pic.path, ctl.signal)
+      .then(u => { if (ctl.signal.aborted) URL.revokeObjectURL(u); else { made = u; setSrc(u); setFailed(false); } })
+      .catch(() => { if (!ctl.signal.aborted) setFailed(true); });   // a cancelled load is not a missing picture
+    return () => { ctl.abort(); if (made) URL.revokeObjectURL(made); };
+  }, [pic.url, pic.path]);
+  const label = pic.description ? `Your picture — the assistant saw: ${pic.description}` : 'Your picture';
+  if (failed) return <span className="inline-flex size-24 items-center justify-center rounded-lg bg-white/20 p-1 text-center text-[11px]">Picture deleted</span>;
+  if (!src) return <span className="size-24 animate-pulse rounded-lg bg-white/20" aria-label="Loading picture" />;
+  return (
+    <a href={src} target="_blank" rel="noreferrer" title={label}>
+      <img src={src} alt={label} className="size-24 rounded-lg border border-white/40 object-cover sm:size-28" />
+    </a>
   );
 }
 

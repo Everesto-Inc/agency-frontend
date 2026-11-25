@@ -2,6 +2,7 @@
 //   Login: ANY email + password. Emails starting with "admin" → admin (plan pro); others → active user (plan free).
 //   Create account → plan "none" (waiting for activation) → activate it as admin on Admin → Users.
 //   Env: MOCK_PORT (default 8000), MOCK_SLOW=1 (slower streaming, to watch the typing bubble).
+import { randomBytes } from 'node:crypto';
 import http from 'node:http';
 
 const PORT = Number(process.env.MOCK_PORT ?? 8000);
@@ -83,6 +84,7 @@ const models = [
 ].map(([model, tier, calls, cost_usd, error_rate]) => ({ model, tier, calls, cost_usd, error_rate, cache_hit_rate: 0.1, share_of_cost: cost_usd / 38.4, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }));
 
 const PIC = 'a'.repeat(64);
+const UPLOADS = new Map(); // id → { owner, type, data, session } (in memory, gone on restart)
 const ANSWERS = {
   ev_research: `**Hyundai Ioniq 5 (2024), Germany**\n\n| Version | Battery | WLTP range |\n|---|---|---|\n| Standard | 63 kWh | 384 km |\n| Long Range RWD | 84 kWh | 570 km |\n\nCharging 10→80 % takes about **18 minutes** on a 350 kW charger. At German home prices (≈ 0.36 €/kWh) a full charge of the 84 kWh battery costs about **27 €**.`,
   product_finder: `Cheapest verified offers for **Sony WH-1000XM5** in France:\n\n1. **279 €** — shop A (in stock, free delivery)\n2. **289 €** — shop B (2–3 days)\n3. **299 €** — shop C\n\nPrices were checked on the shop pages a minute ago.`,
@@ -137,6 +139,22 @@ http.createServer(async (req, res) => {
   }
   if (!me) return fail(res, 401, 'UNAUTHORIZED', 'Not signed in');
 
+  // pictures a user sent: upload on Send (raw body), then only the owner can load them — like the real API
+  if (m === 'POST' && p === '/api/v1/uploads') {
+    const chunks = []; for await (const c of req) chunks.push(c);
+    const data = Buffer.concat(chunks);
+    if (data.length > 2_000_000) return fail(res, 413, 'PAYLOAD_TOO_LARGE', 'Request body too large');
+    const id = randomBytes(32).toString('hex');
+    UPLOADS.set(id, { owner: me.email, type: req.headers['content-type'] ?? 'image/jpeg', data, session: u.searchParams.get('session_id') });
+    return send(res, 201, { id, path: `/api/v1/images/${id}`, content_type: UPLOADS.get(id).type, size_bytes: data.length });
+  }
+  if (m === 'GET' && p.startsWith('/api/v1/images/') && UPLOADS.has(p.slice(15))) {
+    const up = UPLOADS.get(p.slice(15));
+    if (up.owner !== me.email) return fail(res, 404, 'NOT_FOUND', 'Picture not found');
+    res.writeHead(200, { ...CORS, 'content-type': up.type, 'cache-control': 'private, max-age=86400' });
+    return res.end(up.data);
+  }
+
   if (m === 'GET' && p === '/api/v1/auth/me') return send(res, 200, meOf(me));
   if (m === 'PUT' && p === '/api/v1/auth/me/password') return send(res, 204);
   if (m === 'GET' && p === '/api/v1/auth/me/export') return send(res, 200, { account: meOf(me), note: 'mock export' });
@@ -149,7 +167,9 @@ http.createServer(async (req, res) => {
   }
   if (m === 'POST' && p === '/api/v1/chat') {
     if (me.plan === 'none') return fail(res, 403, 'SUBSCRIPTION_REQUIRED', 'Your account is waiting for activation');
-    const { prompt = '', topic, session_id = 'default' } = await body(req);
+    const { prompt = '', topic, session_id = 'default', image_ids = [] } = await body(req);
+    if (image_ids.length > 4 || image_ids.some(i => UPLOADS.get(i)?.owner !== me.email)) return fail(res, 400, 'BAD_REQUEST', 'Unknown picture');
+    if (image_ids.length) await sleep(SLOW ? 2500 : 1200); // "looking at your picture" (vision model)
     seedFor(me);
     const hist = convsOf(me);
     // follow-ups without a clear keyword stay with the conversation's assistant
@@ -157,8 +177,10 @@ http.createServer(async (req, res) => {
     const now = new Date().toISOString();
     const conv = hist.get(session_id) ?? { id: session_id, title: prompt.replace(/\s+/g, ' ').slice(0, 80), pinned: false, turns: 0, created_at: now, messages: [] };
     Object.assign(conv, { turns: conv.turns + 1, last_topic: t, updated_at: now });
-    const answer = t === 'ev_research' && /picture|photo|image|show me/i.test(prompt) ? `${ANSWERS[t]}\n\n![2024 Hyundai Ioniq 5](/api/v1/images/${PIC})\n\n*Picture: example.com (mock)*` : ANSWERS[t];
-    conv.messages.push({ request_id: `m${Date.now()}`, topic: t, prompt, answer, status: 'success', created_at: now, total_tokens: 9087, cost_usd: 0.0035, models: ['gemini-2.5-flash', 'gemini-2.5-flash-lite'] });
+    const seen = image_ids.length ? `*From your picture${image_ids.length > 1 ? 's' : ''} (mock vision): a white electric SUV, probably a Hyundai Ioniq 5.*\n\n` : '';
+    const answer = seen + (!image_ids.length && t === 'ev_research' && /picture|photo|image|show me/i.test(prompt) ? `${ANSWERS[t]}\n\n![2024 Hyundai Ioniq 5](/api/v1/images/${PIC})\n\n*Picture: example.com (mock)*` : ANSWERS[t]);
+    conv.messages.push({ request_id: `m${Date.now()}`, topic: t, prompt, answer, status: 'success', created_at: now, total_tokens: 9087, cost_usd: 0.0035, models: ['gemini-2.5-flash', 'gemini-2.5-flash-lite'],
+      images: image_ids.map(id => ({ id, path: `/api/v1/images/${id}`, description: 'a white electric SUV, probably a Hyundai Ioniq 5 (mock)' })) });
     hist.set(session_id, conv);
     res.writeHead(200, { ...CORS, 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
     const ev = (name, data) => res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);

@@ -552,7 +552,8 @@ export interface paths {
         post?: never;
         /**
          * Delete a conversation (its text is erased)
-         * @description Gone from the history, questions/answers erased, assistant memory forgotten. Usage (tokens, cost) is kept.
+         * @description Gone from the history, questions/answers erased, assistant memory forgotten, pictures you sent deleted
+         *     from storage. Usage (tokens, cost) is kept.
          */
         delete: operations["delete_conversation"];
         options?: never;
@@ -610,6 +611,27 @@ export interface paths {
         get: operations["list_topics"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/uploads": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send a picture (with the next chat message)
+         * @description Body = the picture itself (JPEG, PNG or WebP, ≤ 2 MB). Returns an id to pass in `image_ids` of POST /chat.
+         *     The type is checked from the file's bytes. Private: only you can load it; deleted with the chat.
+         */
+        post: operations["upload"];
         delete?: never;
         options?: never;
         head?: never;
@@ -814,6 +836,11 @@ export interface components {
         /** ChatBody */
         ChatBody: {
             /**
+             * Image Ids
+             * @description Pictures sent with this question (ids from POST /uploads, same chat)
+             */
+            image_ids?: string[];
+            /**
              * Prompt
              * @description Any question; the right assistant is picked
              * @example Cheapest new Sony WH-1000XM5 headphones in the US
@@ -883,6 +910,11 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Images
+             * @description Pictures the user sent with this question
+             */
+            images?: components["schemas"]["SentPicture"][];
             /**
              * Models
              * @description Models that answered (from the LLM call ledger)
@@ -1586,6 +1618,21 @@ export interface components {
              */
             total_tokens: number;
         };
+        /** SentPicture */
+        SentPicture: {
+            /**
+             * Description
+             * @description What the vision model saw — what the assistants got
+             */
+            description?: string | null;
+            /** Id */
+            id: string;
+            /**
+             * Path
+             * @description GET it with your Bearer token (only you can load it)
+             */
+            path: string;
+        };
         /** Today */
         Today: {
             /** By Topic */
@@ -1753,6 +1800,17 @@ export interface components {
             /** Days */
             days: number;
             total: components["schemas"]["UsageTotals"];
+        };
+        /** Uploaded */
+        Uploaded: {
+            /** Content Type */
+            content_type: string;
+            /** Id */
+            id: string;
+            /** Path */
+            path: string;
+            /** Size Bytes */
+            size_bytes: number;
         };
         /** UsagePeriod */
         UsagePeriod: {
@@ -3740,6 +3798,91 @@ export interface operations {
             };
             /** @description Rate limit or daily quota reached (codes RATE_LIMITED / QUOTA_EXCEEDED); see the Retry-After header */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    upload: {
+        parameters: {
+            query: {
+                session_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Uploaded"];
+                };
+            };
+            /** @description Bad request (e.g. unknown topic, malformed input) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request body too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Rate limit or daily quota reached (codes RATE_LIMITED / QUOTA_EXCEEDED); see the Retry-After header */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Temporarily unavailable (topic disabled, model gateway down, ...) */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

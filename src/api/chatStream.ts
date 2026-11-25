@@ -29,7 +29,7 @@ export function parseSse(buffer: string): { events: ChatEvent[]; rest: string } 
 }
 
 export async function streamChat(
-  body: { prompt: string; session_id?: string; topic?: string | null },
+  body: { prompt: string; session_id?: string; topic?: string | null; image_ids?: string[] },
   onEvent: (e: ChatEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
