@@ -1,25 +1,21 @@
-# Backstage catalog entry. Import it into DevOps Space orchid (Backstage → Import repository) — the space is decided
-# by the platform registry, not by this file.
+# Managed by Backstage (imported into DevOps Space orchid). The space is decided by the platform registry, not by this file.
 apiVersion: backstage.io/v1alpha1
 kind: Component
 metadata:
   name: agency-frontend
-  title: Autonomous Agency — web app
-  description: "Web app of the agency: sign-in, chat with the assistants (streamed), usage board, account, admin (activation board, overview)"
+  description: "Application agency-frontend of space orchid"
   annotations:
     github.com/project-slug: Everesto-Inc/agency-frontend
+    backstage.io/techdocs-ref: dir:.
     everesto.live/ci-workflow: ci.yml
     everesto.live/image: ghcr.io/everesto-inc/agency-frontend
     everesto.live/loop: v1.1.2
     everesto.live/gitleaks: "on"
     everesto.live/trivy: "report"
     everesto.live/semgrep: "on"
-    backstage.io/techdocs-ref: dir:.            # docs/ + mkdocs.yml → Tech Docs tab
-  tags: [react, typescript, vite, tailwind, nginx]
+    everesto.live/dependabot: "on"
 spec:
-  type: website
+  type: service
   lifecycle: experimental
   owner: orchid
   system: orchid
-  consumesApis:
-    - agency-api                                # the backend's public API (agency-backend)

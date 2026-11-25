@@ -1,16 +1,17 @@
-# CI for agency-frontend — built on Loop (Backstage "Edit pipeline" can flip the switches below).
-#   Loop: Gitleaks · tests (ci/test.sh: typecheck, unit tests, build, entry-chunk budget) · Semgrep · image build + Trivy
-#   → ghcr.io/everesto-inc/agency-frontend:sha-<7> (pushed from main only)
+# CI for agency-frontend — managed by Backstage (Edit pipeline flips the switches below), built on Loop.
+# Every run ends with a scanned linux/arm64 image: ghcr.io/everesto-inc/agency-frontend (pushed from main only).
+# Gitleaks, Trivy scans and the image build always run. Add own jobs below with `needs: loop`.
 name: CI
 
 on:
   push:
     branches: [main]
-    paths-ignore: ['docs/**', 'mkdocs.yml', 'catalog-info.yaml', '*.md']
+    paths-ignore: ['docs/**', 'mkdocs.yml', 'catalog-info.yaml', '*.md']   # docs/settings only → no rebuild
   pull_request:
   workflow_dispatch:
 
 concurrency:
+  # pull requests: a newer push cancels the older run · main: every commit finishes (each one publishes an image)
   group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: true
 
@@ -21,16 +22,14 @@ jobs:
   loop:
     uses: Everesto-Inc/loop/.github/workflows/pipeline.yml@4d70c4efcdad7bd522d60fe13d6c324a83fe0936 # v1.1.2
     with:
-      stack: docker          # Node app: tests run via test-command (in node:22), the image via the Dockerfile
+      stack: docker
       runner: ubuntu-24.04-arm
       tests: true
-      test-command: bash ci/test.sh
       semgrep: true
-      sonarqube: false       # turn on once UI tests cover enough (new-code coverage gate is 80 %)
+      sonarqube: false
       trivy: report
-      image: ghcr.io/everesto-inc/agency-frontend
     secrets:
-      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}   # only what Loop needs — never `inherit` (least privilege)
     permissions:
       contents: read
       packages: write        # push + keep the last 5 images in ghcr.io
