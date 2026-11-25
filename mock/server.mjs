@@ -111,6 +111,29 @@ const CASES = [
 ];
 const SETTINGS = JSON.parse(readFileSync(new URL('./settings.json', import.meta.url), 'utf8'));
 const VERSIONS = [];
+const DRAFTS = [];
+const DATASETS = [];
+const TESTS = [];
+// a mock test advances one question per poll: the draft does a bit better, on another model
+const view = ({ rows, ...t }) => t;
+const tick = t => {
+  if (t.status === 'queued') Object.assign(t, { status: 'running', started_at: new Date().toISOString() });
+  if (t.status === 'cancelling') Object.assign(t, { status: 'cancelled', finished_at: new Date().toISOString() });
+  if (t.status !== 'running') return;
+  const c = t.rows[t.done_cases];
+  const v = (good, model) => ({ passed: good, judge_score: good ? 4.4 : 3.1, failures: good ? [] : ['missing: km'], rationale: good ? 'grounded and complete' : 'no unit given',
+    cost_usd: model.includes('lite') ? 0.0021 : 0.0034, latency_ms: model.includes('lite') ? 6100 : 4300, models: [model], status: 'success',
+    answer: good ? `${c.prompt} → about 570 km (WLTP), source cited.` : `${c.prompt} → about 570.` });
+  const live = v(t.done_cases % 3 !== 0, 'gemini-flash-lite');
+  t.results.push({ case_id: c.id, topic: c.topic, prompt: c.prompt, variants: t.draft_id ? { live, draft: v(true, 'gemini-flash') } : { live } });
+  t.done_cases += 1;
+  if (t.done_cases >= t.total_cases) {
+    const sum = k => { const rs = t.results.map(r => r.variants[k]); return { cases: rs.length, pass_rate: rs.filter(r => r.passed).length / rs.length,
+      mean_judge_score: rs.reduce((a, r) => a + r.judge_score, 0) / rs.length, mean_cost_usd: rs.reduce((a, r) => a + r.cost_usd, 0) / rs.length,
+      total_cost_usd: rs.reduce((a, r) => a + r.cost_usd, 0), p95_latency_ms: Math.max(...rs.map(r => r.latency_ms)), models: { [rs[0].models[0]]: rs.length } }; };
+    Object.assign(t, { status: 'done', finished_at: new Date().toISOString(), summary: t.draft_id ? { live: sum('live'), draft: sum('draft') } : { live: sum('live') } });
+  }
+};
 const isObj = x => x && typeof x === 'object' && !Array.isArray(x);
 const merge = (a, b) => (isObj(a) && isObj(b) ? Object.fromEntries([...new Set([...Object.keys(a), ...Object.keys(b)])].map(k => [k, k in b ? merge(a[k], b[k]) : a[k]])) : b);
 const diff = (a, b) => (isObj(a) && isObj(b) ? Object.fromEntries(Object.keys(b).filter(k => JSON.stringify(a[k]) !== JSON.stringify(b[k])).map(k => [k, diff(a[k], b[k])])) : b);
@@ -279,6 +302,86 @@ http.createServer(async (req, res) => {
     c.status = (await body(req)).status;
     return send(res, 200, { id: c.id, status: c.status });
   }
+  // ---- settings: export / import / drafts (before /settings/{name}) ----
+  const liveOf = sec => merge(sec.file_values, VERSIONS.filter(v => v.name === sec.name).at(-1)?.content ?? {});
+  const leaves = (a, b, pre = '') => (isObj(a) && isObj(b)
+    ? [...new Set([...Object.keys(a), ...Object.keys(b)])].sort().flatMap(k => leaves(a[k], b[k], pre ? `${pre}.${k}` : k))
+    : JSON.stringify(a) === JSON.stringify(b) ? [] : [{ path: pre, live: a ?? null, draft: b ?? null }]);
+  const draftView = d => ({ ...d, sections: Object.entries(d.content).map(([n, ov]) => {
+    const sec = SETTINGS.find(x => x.name === n);
+    return { name: n, title: sec?.title ?? n, changes: sec ? leaves(liveOf(sec), merge(sec.file_values, ov)) : [], errors: sec ? [] : [{ field: '', message: 'unknown section' }] };
+  }).filter(x => x.changes.length || x.errors.length), stale: [] });
+  const newDraft = (sections, comment, source) => {
+    const bad = Object.keys(sections).filter(n => !SETTINGS.some(x => x.name === n)).map(n => ({ field: n, message: 'unknown section' }))
+      .concat(Object.entries(sections).flatMap(([n, v]) => negatives(v).map(f => ({ field: `${n}.${f}`, message: 'Input should be greater than or equal to 0' }))));
+    if (bad.length) return { error: bad };
+    const d = { id: DRAFTS.length + 1, content: Object.fromEntries(Object.entries(sections).map(([n, v]) => [n, diff(SETTINGS.find(x => x.name === n).file_values, v)])),
+      author: me.email, comment, source, status: 'draft', created_at: new Date().toISOString(), decided_at: null, decided_by: null };
+    DRAFTS.push(d); return { draft: d };
+  };
+  const invalid = errs => send(res, 422, { error: { code: 'INVALID_SETTINGS', message: 'These values are not valid', request_id: null, details: { errors: errs } } });
+  if (m === 'GET' && p === '/api/v1/admin/settings/export') {
+    res.writeHead(200, { ...CORS, 'content-type': 'application/json', 'content-disposition': 'attachment; filename="agency-config-mock.json"', 'access-control-expose-headers': 'content-disposition' });
+    return res.end(JSON.stringify({ format: 'agency-config', format_version: 1, exported_at: new Date().toISOString(), exported_by: me.email,
+      sections: Object.fromEntries(SETTINGS.map(x => [x.name, liveOf(x)])) }, null, 2));
+  }
+  if (m === 'POST' && p === '/api/v1/admin/settings/import') {
+    const b = await body(req);
+    if (b.format !== 'agency-config') return invalid([{ field: 'format', message: 'Not an agency config file' }]);
+    const r = newDraft(b.sections ?? {}, u.searchParams.get('comment') ?? 'imported file', 'import');
+    return r.error ? invalid(r.error) : send(res, 201, draftView(r.draft));
+  }
+  if (p === '/api/v1/admin/settings/drafts') {
+    if (m === 'GET') return send(res, 200, DRAFTS.slice().reverse().map(draftView));
+    const b = await body(req); const r = newDraft(b.sections ?? {}, b.comment ?? '', 'edit');
+    return r.error ? invalid(r.error) : send(res, 201, draftView(r.draft));
+  }
+  if (p.startsWith('/api/v1/admin/settings/drafts/')) {
+    const [, , , , , , id, act] = p.split('/');
+    const d = DRAFTS.find(x => x.id === Number(id));
+    if (!d) return fail(res, 404, 'NOT_FOUND', 'Draft not found');
+    if (m === 'GET') return send(res, 200, draftView(d));
+    if (d.status !== 'draft') return fail(res, 409, 'CONFLICT', `Draft is already ${d.status}`);
+    if (act === 'apply') for (const s of draftView(d).sections) VERSIONS.push({ id: VERSIONS.length + 1, name: s.name, content: d.content[s.name], author: me.email, comment: `draft #${d.id}: ${d.comment}`, created_at: new Date().toISOString() });
+    Object.assign(d, { status: act === 'apply' ? 'applied' : 'discarded', decided_at: new Date().toISOString(), decided_by: me.email });
+    return send(res, 200, draftView(d));
+  }
+  // ---- experiments: datasets + config tests (a test "runs" as you poll it) ----
+  if (p === '/api/v1/admin/experiments/datasets' && m === 'POST') {
+    const chunks = []; for await (const c of req) chunks.push(c);
+    const lines = Buffer.concat(chunks).toString('utf8').split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => l.trim());
+    const cases = [], errors = [];
+    for (const [n, l] of lines) { try { const c = JSON.parse(l); if (!c.id || !c.topic || !c.prompt) errors.push({ line: n, message: 'id, topic and prompt are required' }); else cases.push(c); } catch { errors.push({ line: n, message: 'not JSON' }); } }
+    if (!cases.length && !errors.length) errors.push({ line: 0, message: 'no cases in the file' });
+    if (errors.length) return send(res, 422, { error: { code: 'INVALID_DATASET', message: 'The file has problems', request_id: null, details: { errors } } });
+    const name = u.searchParams.get('name');
+    const topics = {}; cases.forEach(c => { topics[c.topic] = (topics[c.topic] ?? 0) + 1; });
+    const d = { id: DATASETS.length + 1, name, version: DATASETS.filter(x => x.name === name).length + 1, cases: cases.length, topics,
+      size_bytes: Buffer.concat(chunks).length, author: me.email, comment: u.searchParams.get('comment') ?? '', created_at: new Date().toISOString(), rows: cases };
+    DATASETS.push(d); const { rows, ...meta } = d; return send(res, 201, meta);
+  }
+  if (p === '/api/v1/admin/experiments/datasets') return send(res, 200, DATASETS.slice().sort((a, b) => a.name.localeCompare(b.name) || b.version - a.version).map(({ rows, ...x }) => x));
+  if (/^\/api\/v1\/admin\/experiments\/datasets\/\d+\/preview$/.test(p)) {
+    const d = DATASETS.find(x => x.id === Number(p.split('/')[6]));
+    if (!d) return fail(res, 404, 'NOT_FOUND', 'Dataset not found');
+    const { rows, ...meta } = d; return send(res, 200, { dataset: meta, total: rows.length, rows: rows.slice(0, Number(u.searchParams.get('limit') ?? 20)) });
+  }
+  if (p === '/api/v1/admin/experiments/tests' && m === 'POST') {
+    const b = await body(req); const d = DATASETS.find(x => x.id === b.dataset_id);
+    if (!d) return fail(res, 404, 'NOT_FOUND', 'Dataset not found');
+    const t = { id: TESTS.length + 1, dataset_id: d.id, dataset_name: d.name, dataset_version: d.version, draft_id: b.draft_id ?? null, max_cases: b.max_cases ?? 20,
+      status: 'queued', created_by: me.email, created_at: new Date().toISOString(), started_at: null, finished_at: null, done_cases: 0,
+      total_cases: Math.min(b.max_cases ?? 20, d.cases), summary: null, results: [], error: null, estimated_cost_usd: 0.012 * Math.min(b.max_cases ?? 20, d.cases) * (b.draft_id ? 2 : 1), rows: d.rows };
+    TESTS.push(t); return send(res, 201, view(t));
+  }
+  if (p === '/api/v1/admin/experiments/tests') { TESTS.forEach(tick); return send(res, 200, TESTS.slice().reverse().map(t => ({ ...view(t), results: null }))); }
+  if (/^\/api\/v1\/admin\/experiments\/tests\/\d+(\/cancel)?$/.test(p)) {
+    const t = TESTS.find(x => x.id === Number(p.split('/')[6]));
+    if (!t) return fail(res, 404, 'NOT_FOUND', 'Test not found');
+    if (p.endsWith('/cancel')) { t.status = t.status === 'queued' ? 'cancelled' : 'cancelling'; return send(res, 200, view(t)); }
+    tick(t); return send(res, 200, view(t));
+  }
+
   if (p.startsWith('/api/v1/admin/settings')) {
     const [, , , , , name, action, vid] = p.split('/');   // /api/v1/admin/settings/{name}/{history|rollback}/{id}
     const view = s => {

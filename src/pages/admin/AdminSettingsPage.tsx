@@ -1,6 +1,6 @@
 import clsx from 'clsx';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { History, RotateCcw, Save, Undo2 } from 'lucide-react';
+import { FlaskConical, History, RotateCcw, Save, Undo2 } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { api, unwrap, type Schemas } from '@/api/client';
 import { ApiError, messageOf } from '@/api/errors';
@@ -8,6 +8,7 @@ import { AdminTabs } from '@/components/AdminTabs';
 import { Alert, Board, BoardHeader, Button, Card, Label, List, Spinner } from '@/components/ui';
 import { changedPaths, getAt, labelOf, resolve, setAt, type Json, type Path, type Schema } from '@/lib/schemaForm';
 import { EmptyCard } from '../UsagePage';
+import { DRAFTS_KEY, DraftsList, ExportImport } from './SettingsDrafts';
 
 type Section = Schemas['SettingsSection'];
 const KEY = ['admin-settings'];
@@ -16,11 +17,13 @@ const KEY = ['admin-settings'];
 export default function AdminSettingsPage() {
   const sections = useQuery({ queryKey: KEY, queryFn: () => unwrap(api.GET('/api/v1/admin/settings')) });
   const [name, setName] = useState<string>();
+  const [newDraft, setNewDraft] = useState<number>();
   const current = sections.data?.find(s => s.name === name) ?? sections.data?.[0];
 
   return (
     <>
-      <BoardHeader title="Settings" sub="Change limits and behaviour without a code change. Live in every service within ~10 s." />
+      <BoardHeader title="Settings" sub="Change limits, models and prompts without a code change — live in ~10 s, or as a draft to test first."
+        action={<ExportImport onDraft={d => setNewDraft(d.id)} />} />
       <AdminTabs />
       {sections.isPending && <Spinner light />}
       {sections.error && <Alert>{messageOf(sections.error)}</Alert>}
@@ -38,12 +41,12 @@ export default function AdminSettingsPage() {
           })}
         </div>
       )}
-      {current && <SectionEditor key={current.name + (current.version?.id ?? 0)} section={current} />}
+      {current && <SectionEditor key={current.name + (current.version?.id ?? 0)} section={current} onDraft={setNewDraft} highlight={newDraft} />}
     </>
   );
 }
 
-function SectionEditor({ section }: { section: Section }) {
+function SectionEditor({ section, onDraft, highlight }: { section: Section; onDraft: (id: number) => void; highlight?: number }) {
   const qc = useQueryClient();
   const root = section.json_schema as Schema;
   const [values, setValues] = useState<Json>(section.values as Json);
@@ -67,6 +70,11 @@ function SectionEditor({ section }: { section: Section }) {
   });
 
   const submit = (e: FormEvent) => { e.preventDefault(); save.mutate({ values, comment }); };
+  const asDraft = useMutation({
+    mutationFn: () => unwrap(api.POST('/api/v1/admin/settings/drafts', { body: { sections: { [section.name]: values as never }, comment } })),
+    onSuccess: d => { qc.invalidateQueries({ queryKey: DRAFTS_KEY }); setValues(section.values as Json); setComment(''); setErrors({}); onDraft(d.id); },
+    onError,
+  });
 
   return (
     <Board>
@@ -88,6 +96,10 @@ function SectionEditor({ section }: { section: Section }) {
             {save.error != null && <div className="mt-2"><Alert>{messageOf(save.error)}</Alert></div>}
             <div className="mt-3 flex flex-wrap gap-2">
               <Button type="submit" busy={save.isPending} disabled={!unsaved.length}><Save className="size-4" /> Save{unsaved.length ? ` (${unsaved.length})` : ''}</Button>
+              {unsaved.length > 0 && (
+                <Button type="button" variant="subtle" busy={asDraft.isPending} onClick={() => asDraft.mutate()} title="Keep live as it is; test this first (Experiments)">
+                  <FlaskConical className="size-4" /> Save as draft</Button>
+              )}
               {unsaved.length > 0 && <Button type="button" variant="subtle" onClick={() => { setValues(section.values as Json); setErrors({}); }}><Undo2 className="size-4" /> Discard</Button>}
               {fromFile.size > 0 && (
                 <Button type="button" variant="subtle" onClick={() => save.mutate({ values: section.file_values as Json, comment: comment || 'reset to the file' })}>
@@ -99,6 +111,7 @@ function SectionEditor({ section }: { section: Section }) {
         </form>
       </List>
       <HistoryList section={section} onRolledBack={onSaved} />
+      <DraftsList highlight={highlight} />
     </Board>
   );
 }
@@ -229,9 +242,18 @@ function Field({ root, schema, path, values, setValues, changed, errors }: {
       </label>
     );
   }
+  const text = String(value ?? '');
+  if (text.length > 80 || text.includes('\n') || /system|template|rubric|instruction/.test(String(path.at(-1)))) {
+    return (
+      <label className="block" htmlFor={id}>{label}{hint}
+        <textarea id={id} value={text} onChange={e => set(e.target.value)} rows={Math.min(18, Math.max(3, text.split('\n').length + 1))}
+          className={input.replace('h-10', '') + ' py-2 font-mono text-xs leading-relaxed'} />{err}
+      </label>
+    );
+  }
   return (
     <label className="block" htmlFor={id}>{label}{hint}
-      <input id={id} className={input} value={String(value ?? '')} onChange={e => set(e.target.value)} />{err}
+      <input id={id} className={input} value={text} onChange={e => set(e.target.value)} />{err}
     </label>
   );
 }

@@ -8,7 +8,7 @@ import { Alert, Board, BoardHeader, Button, Card, Label, List, Metric, Spinner }
 import { pct, usd } from '@/lib/format';
 import { EmptyCard } from '../UsagePage';
 
-type Case = Schemas['EvalCase'];
+type Case = Schemas['EvalCaseCandidate'];
 const score = (v?: number | null) => (v == null ? '—' : `${v.toFixed(2)} / 5`);
 
 /** Quality per assistant (offline evals, online judge, drift) + the 👍/👎 answers waiting to become test cases. */

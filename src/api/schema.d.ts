@@ -130,6 +130,101 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/admin/experiments/datasets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Test datasets, every version */
+        get: operations["list_datasets"];
+        put?: never;
+        /**
+         * Upload a test dataset (JSONL) — a new version
+         * @description One JSON object per line: {"id", "topic", "prompt", "checks": {...}, "rubric", "reference", "tags"} —
+         *     same format as evals/datasets/*.jsonl. Errors come back per line; nothing is stored unless all lines are valid.
+         */
+        post: operations["upload_dataset"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/experiments/datasets/{dataset_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A dataset's cases */
+        get: operations["preview_dataset"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/experiments/tests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Config tests, newest first (no per-case results) */
+        get: operations["list_tests"];
+        put?: never;
+        /**
+         * Test a draft against live on a dataset (queued)
+         * @description Each case runs once with the live config and once with the draft (as the eval service account). Starts
+         *     within ~2 min; results stream in. The estimate uses each assistant's recent average cost per question.
+         */
+        post: operations["create_test"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/experiments/tests/{test_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One config test with per-case results */
+        get: operations["get_test"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/experiments/tests/{test_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Stop a queued or running test */
+        post: operations["cancel_test"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/admin/guardrails": {
         parameters: {
             query?: never;
@@ -275,6 +370,112 @@ export interface paths {
         get: operations["list_settings"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Drafts, newest first */
+        get: operations["list_drafts"];
+        put?: never;
+        /** Save edited values as a draft (to test before applying) */
+        post: operations["create_draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/drafts/{draft_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One draft with its changes vs live */
+        get: operations["get_draft"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/drafts/{draft_id}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Make a draft live */
+        post: operations["apply_draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/drafts/{draft_id}/discard": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Throw a draft away */
+        post: operations["discard_draft"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Download every section's live values as one JSON file */
+        get: operations["export_settings"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/settings/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a config file → a draft (nothing goes live yet)
+         * @description Sections you leave out stay as they are. Check the changes, test the draft (Admin → Experiments), then apply.
+         */
+        post: operations["import_settings"];
         delete?: never;
         options?: never;
         head?: never;
@@ -862,7 +1063,7 @@ export interface components {
             by_model: components["schemas"]["ModelUsage"][];
             /** By Topic */
             by_topic: components["schemas"]["TopicBreakdown"][];
-            change: components["schemas"]["Change"];
+            change: components["schemas"]["edge_gateway__schemas__Change"];
             /**
              * Currency
              * @default USD
@@ -934,18 +1135,6 @@ export interface components {
             /** Tier */
             tier: string;
         };
-        /**
-         * Change
-         * @description % change vs the previous month (null when the previous month was 0).
-         */
-        Change: {
-            /** Cost Usd Pct */
-            cost_usd_pct: number | null;
-            /** Runs Pct */
-            runs_pct: number | null;
-            /** Total Tokens Pct */
-            total_tokens_pct: number | null;
-        };
         /** ChatBody */
         ChatBody: {
             /**
@@ -977,6 +1166,126 @@ export interface components {
              * @example null
              */
             topic?: string | null;
+        };
+        /**
+         * Checks
+         * @description Deterministic expectations -- cheap, exact, run before the LLM judge.
+         */
+        Checks: {
+            /**
+             * Expect Refusal
+             * @default false
+             */
+            expect_refusal: boolean;
+            /** Max Cost Usd */
+            max_cost_usd?: number | null;
+            /** Max Latency S */
+            max_latency_s?: number | null;
+            /**
+             * Min Judge Score
+             * @default 3.5
+             */
+            min_judge_score: number;
+            /**
+             * Must Contain
+             * @description all must appear (case-insensitive)
+             */
+            must_contain?: string[];
+            /**
+             * Must Contain Any
+             * @description at least one must appear
+             */
+            must_contain_any?: string[];
+            /** Must Not Contain */
+            must_not_contain?: string[];
+            /**
+             * Require Sources
+             * @default false
+             */
+            require_sources: boolean;
+        };
+        /**
+         * ConfigFile
+         * @description The JSON file you download / upload: every section's values (all of them, not only changes).
+         */
+        ConfigFile: {
+            /** Exported At */
+            exported_at?: string | null;
+            /** Exported By */
+            exported_by?: string | null;
+            /**
+             * Format
+             * @description Always "agency-config"
+             * @default agency-config
+             */
+            format: string;
+            /**
+             * Format Version
+             * @default 1
+             */
+            format_version: number;
+            /**
+             * Sections
+             * @description section name → its values
+             */
+            sections: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        /** ConfigTest */
+        ConfigTest: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Created By */
+            created_by: string;
+            /** Dataset Id */
+            dataset_id: number;
+            /** Dataset Name */
+            dataset_name: string;
+            /** Dataset Version */
+            dataset_version: number;
+            /** Done Cases */
+            done_cases: number;
+            /** Draft Id */
+            draft_id: number | null;
+            /** Error */
+            error: string | null;
+            /** Estimated Cost Usd */
+            estimated_cost_usd?: number | null;
+            /** Finished At */
+            finished_at: string | null;
+            /** Id */
+            id: number;
+            /** Max Cases */
+            max_cases: number;
+            /**
+             * Results
+             * @description per case: both variants side by side
+             */
+            results?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Started At */
+            started_at: string | null;
+            /**
+             * Status
+             * @description queued · running · cancelling · done · failed · cancelled
+             */
+            status: string;
+            /**
+             * Summary
+             * @description per variant (live / draft): pass rate, judge, cost, p95, models
+             */
+            summary?: {
+                [key: string]: unknown;
+            } | null;
+            /** Total Cases */
+            total_cases: number;
         };
         /** Conversation */
         Conversation: {
@@ -1157,6 +1466,102 @@ export interface components {
             /** Total Tokens */
             total_tokens: number;
         };
+        /** Dataset */
+        Dataset: {
+            /** Author */
+            author: string;
+            /** Cases */
+            cases: number;
+            /** Comment */
+            comment: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Size Bytes */
+            size_bytes: number;
+            /** Topics */
+            topics: {
+                [key: string]: number;
+            };
+            /** Version */
+            version: number;
+        };
+        /** DatasetPreview */
+        DatasetPreview: {
+            dataset: components["schemas"]["Dataset"];
+            /** Rows */
+            rows: components["schemas"]["EvalCase"][];
+            /** Total */
+            total: number;
+        };
+        /** DraftCreate */
+        DraftCreate: {
+            /**
+             * Comment
+             * @default
+             */
+            comment: string;
+            /**
+             * Sections
+             * @description section name → values as you want them
+             */
+            sections: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        /** DraftSection */
+        DraftSection: {
+            /** Changes */
+            changes: components["schemas"]["edge_gateway__routes_settings__Change"][];
+            /** Errors */
+            errors?: {
+                [key: string]: string;
+            }[];
+            /** Name */
+            name: string;
+            /** Title */
+            title: string;
+        };
+        /** DraftView */
+        DraftView: {
+            /** Author */
+            author: string;
+            /** Comment */
+            comment: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Decided By */
+            decided_by?: string | null;
+            /** Id */
+            id: number;
+            /**
+             * Sections
+             * @description Only sections the draft changes vs what is live NOW
+             */
+            sections: components["schemas"]["DraftSection"][];
+            /** Source */
+            source: string;
+            /**
+             * Stale
+             * @description Sections changed live after the draft was made (applying overwrites them)
+             */
+            stale?: string[];
+            /** Status */
+            status: string;
+        };
         /** DriftSummary */
         DriftSummary: {
             /**
@@ -1219,6 +1624,38 @@ export interface components {
         };
         /** EvalCase */
         EvalCase: {
+            /**
+             * @default {
+             *       "expect_refusal": false,
+             *       "min_judge_score": 3.5,
+             *       "must_contain": [],
+             *       "must_contain_any": [],
+             *       "must_not_contain": [],
+             *       "require_sources": false
+             *     }
+             */
+            checks: components["schemas"]["Checks"];
+            /** Id */
+            id: string;
+            /** Prompt */
+            prompt: string;
+            /**
+             * Reference
+             * @description Known-good facts/answer the judge may compare against
+             */
+            reference?: string | null;
+            /**
+             * Rubric
+             * @description What a good answer must do, for the judge
+             */
+            rubric?: string | null;
+            /** Tags */
+            tags?: string[];
+            /** Topic */
+            topic: string;
+        };
+        /** EvalCaseCandidate */
+        EvalCaseCandidate: {
             /** Answer */
             answer: string | null;
             /** Checks */
@@ -1888,6 +2325,21 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** TestCreate */
+        TestCreate: {
+            /** Dataset Id */
+            dataset_id: number;
+            /**
+             * Draft Id
+             * @description None = run the live config only (a benchmark)
+             */
+            draft_id?: number | null;
+            /**
+             * Max Cases
+             * @default 20
+             */
+            max_cases: number;
+        };
         /** Today */
         Today: {
             /** By Topic */
@@ -2127,7 +2579,7 @@ export interface components {
              * @description Sorted by cost, highest first
              */
             by_topic: components["schemas"]["TopicBreakdown"][];
-            change: components["schemas"]["Change"];
+            change: components["schemas"]["edge_gateway__schemas__Change"];
             /**
              * Currency
              * @default USD
@@ -2200,6 +2652,27 @@ export interface components {
             created_at: string;
             /** Id */
             id: number;
+        };
+        /** Change */
+        edge_gateway__routes_settings__Change: {
+            /** Draft */
+            draft?: unknown;
+            /** Live */
+            live?: unknown;
+            /** Path */
+            path: string;
+        };
+        /**
+         * Change
+         * @description % change vs the previous month (null when the previous month was 0).
+         */
+        edge_gateway__schemas__Change: {
+            /** Cost Usd Pct */
+            cost_usd_pct: number | null;
+            /** Runs Pct */
+            runs_pct: number | null;
+            /** Total Tokens Pct */
+            total_tokens_pct: number | null;
         };
     };
     responses: never;
@@ -2446,7 +2919,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["EvalCase"][];
+                    "application/json": components["schemas"]["EvalCaseCandidate"][];
                 };
             };
             /** @description Missing, invalid or expired access token */
@@ -2572,6 +3045,396 @@ export interface operations {
             };
             /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_datasets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dataset"][];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    upload_dataset: {
+        parameters: {
+            query: {
+                /** @description e.g. ev-basics */
+                name: string;
+                comment?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Dataset"];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Request body too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Temporarily unavailable (topic disabled, model gateway down, ...) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    preview_dataset: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetPreview"];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_tests: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigTest"][];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_test: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TestCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigTest"];
+                };
+            };
+            /** @description Bad request (e.g. unknown topic, malformed input) */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_test: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                test_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigTest"];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancel_test: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                test_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigTest"];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -2969,6 +3832,378 @@ export interface operations {
             };
             /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_drafts: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftView"][];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_draft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DraftCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftView"];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_draft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftView"];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    apply_draft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftView"];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict (e.g. email already registered) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    discard_draft: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                draft_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftView"];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conflict (e.g. email already registered) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    export_settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConfigFile"];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    import_settings: {
+        parameters: {
+            query?: {
+                comment?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConfigFile"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftView"];
+                };
+            };
+            /** @description Missing, invalid or expired access token */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authenticated but not allowed (code SUBSCRIPTION_REQUIRED: the plan doesn't include this topic; FORBIDDEN: admin only) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation error: details.errors lists the offending fields */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

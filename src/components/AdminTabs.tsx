@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { Gauge, Settings2, ShieldAlert, Shield, Users } from 'lucide-react';
+import { FlaskConical, Gauge, Settings2, ShieldAlert, Shield, Users } from 'lucide-react';
 import { NavLink } from 'react-router';
 
 const TABS = [
@@ -8,6 +8,7 @@ const TABS = [
   { to: '/admin/guardrails', label: 'Guardrails', icon: ShieldAlert },
   { to: '/admin/quality', label: 'Quality', icon: Gauge },
   { to: '/admin/settings', label: 'Settings', icon: Settings2 },
+  { to: '/admin/experiments', label: 'Experiments', icon: FlaskConical },
 ];
 
 /** The admin pages, as chips under the board header (one "Admin" item in the main nav). */
