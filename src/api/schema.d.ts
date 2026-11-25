@@ -884,6 +884,11 @@ export interface components {
              */
             created_at: string;
             /**
+             * Models
+             * @description Models that answered (from the LLM call ledger)
+             */
+            models?: string[];
+            /**
              * Prompt
              * @description PII-redacted; null after the retention period (config/privacy.yaml)
              */

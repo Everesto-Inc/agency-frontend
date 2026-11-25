@@ -1,5 +1,5 @@
 import clsx from 'clsx';
-import { ArrowUp, History, Lock, Plus, Sparkles, Square } from 'lucide-react';
+import { ArrowUp, Bot, History, Lock, Plus, Sparkles, Square } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -21,11 +21,18 @@ type Turn = {
   answer: string | null;
   tokens?: number;
   cost?: number;
+  models?: ModelUse[];
   error?: string;
   done: boolean;
 };
 
+type ModelUse = { model: string; calls?: number };
 const COLORS: LabelColor[] = ['green', 'yellow', 'purple', 'orange', 'blue', 'red'];
+
+/** Pure: the `models` of a usage event → [{ model, calls }] (ignores anything malformed). */
+export function modelsOf(v: unknown): ModelUse[] {
+  return Array.isArray(v) ? v.filter(m => m && typeof m.model === 'string').map(m => ({ model: m.model, calls: Number(m.calls) || 1 })) : [];
+}
 const newSession = () => crypto.randomUUID().replace(/-/g, '').slice(0, 24);
 
 export default function ChatPage() {
@@ -61,7 +68,7 @@ export default function ChatPage() {
     setTitle(c.title);
     setTurns(c.messages.map(m => ({
       id: m.request_id, prompt: m.prompt, answer: m.answer, topic: m.topic, done: true,
-      tokens: m.total_tokens, cost: m.cost_usd, error: m.status === 'success' || m.status === 'running' ? undefined : `This answer ended with: ${m.status}`,
+      tokens: m.total_tokens, cost: m.cost_usd, models: (m.models ?? []).map(model => ({ model })), error: m.status === 'success' || m.status === 'running' ? undefined : `This answer ended with: ${m.status}`,
     })));
   }, [opened.data, conversationId]);
 
@@ -87,7 +94,7 @@ export default function ChatPage() {
       if (ev.type === 'routed') update(id, t => ({ ...t, topic: ev.topic }));
       else if (ev.type === 'status') update(id, t => ({ ...t, status: ev.content }));
       else if (ev.type === 'token') update(id, t => ({ ...t, answer: (t.answer ?? '') + ev.content, status: undefined }));
-      else if (ev.type === 'usage') update(id, t => ({ ...t, tokens: Number(ev.data.total_tokens ?? 0), cost: Number(ev.data.cost_usd ?? 0) }));
+      else if (ev.type === 'usage') update(id, t => ({ ...t, tokens: Number(ev.data.total_tokens ?? 0), cost: Number(ev.data.cost_usd ?? 0), models: modelsOf(ev.data.models) }));
       else if (ev.type === 'error') update(id, t => ({ ...t, error: ev.content || 'The assistant failed' }));
       else if (ev.type === 'done') update(id, t => ({ ...t, done: true, status: undefined }));
     };
@@ -182,9 +189,7 @@ export default function ChatPage() {
                       </div>
                     ) : t.done && !t.error && <p className="text-sm italic text-muted">Answer text removed after the retention period</p>}
                     {t.error && <Alert>{t.error}</Alert>}
-                    {t.done && t.tokens != null && (
-                      <div className="mt-2 border-t border-line pt-2 text-xs text-muted">{num(t.tokens)} tokens · {usd(t.cost)}</div>
-                    )}
+                    {t.done && t.tokens != null && <AnswerFooter models={t.models} tokens={t.tokens} cost={t.cost} />}
                   </article>
                 )}
               </div>
@@ -210,6 +215,26 @@ export default function ChatPage() {
         </section>
       </div>
     </>
+  );
+}
+
+/** Under every answer: which model(s) answered, tokens, cost. */
+function AnswerFooter({ models = [], tokens, cost }: { models?: ModelUse[]; tokens: number; cost?: number }) {
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-line pt-2 text-xs text-muted">
+      {models.length > 0 && (
+        <span className="flex flex-wrap items-center gap-1" title="Models that wrote this answer (via the model gateway)">
+          <Bot className="size-3.5" aria-label="Answered by" />
+          {models.map(m => (
+            <span key={m.model} className="rounded bg-brand-soft px-1.5 py-0.5 font-mono text-[11px] text-ink">
+              {m.model}{m.calls && m.calls > 1 ? ` ×${m.calls}` : ''}
+            </span>
+          ))}
+          <span aria-hidden>·</span>
+        </span>
+      )}
+      <span>{num(tokens)} tokens · {usd(cost)}</span>
+    </div>
   );
 }
 

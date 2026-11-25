@@ -27,3 +27,11 @@ describe('groupConversations', () => {
     expect(groupConversations([], new Date())).toEqual([]);
   });
 });
+
+describe('modelsOf', () => {
+  it('reads the usage event models, ignores junk', async () => {
+    const { modelsOf } = await import('@/pages/ChatPage');
+    expect(modelsOf([{ model: 'gemini-2.5-flash', calls: 2 }, { nope: 1 }, null])).toEqual([{ model: 'gemini-2.5-flash', calls: 2 }]);
+    expect(modelsOf(undefined)).toEqual([]);
+  });
+});

@@ -60,7 +60,7 @@ const seedFor = u => {
   ].forEach(([title, topic, h, pinned], i) => {
     const id = `seed${i}${u.id.slice(-4)}`;
     m.set(id, { id, title, pinned, turns: 1, last_topic: topic, created_at: ago(h), updated_at: ago(h), messages: [
-      { request_id: `${id}-1`, topic, prompt: title + '?', answer: i === 4 ? null : ANSWERS[topic], status: 'success', created_at: ago(h), total_tokens: 8800, cost_usd: 0.0031 },
+      { request_id: `${id}-1`, topic, prompt: title + '?', answer: i === 4 ? null : ANSWERS[topic], status: 'success', created_at: ago(h), total_tokens: 8800, cost_usd: 0.0031, models: ['gemini-2.5-flash'] },
     ].map(x => (i === 4 ? { ...x, prompt: null } : x)) });
   });
 };
@@ -151,7 +151,7 @@ http.createServer(async (req, res) => {
     const now = new Date().toISOString();
     const conv = hist.get(session_id) ?? { id: session_id, title: prompt.replace(/\s+/g, ' ').slice(0, 80), pinned: false, turns: 0, created_at: now, messages: [] };
     Object.assign(conv, { turns: conv.turns + 1, last_topic: t, updated_at: now });
-    conv.messages.push({ request_id: `m${Date.now()}`, topic: t, prompt, answer: ANSWERS[t], status: 'success', created_at: now, total_tokens: 9087, cost_usd: 0.0035 });
+    conv.messages.push({ request_id: `m${Date.now()}`, topic: t, prompt, answer: ANSWERS[t], status: 'success', created_at: now, total_tokens: 9087, cost_usd: 0.0035, models: ['gemini-2.5-flash', 'gemini-2.5-flash-lite'] });
     hist.set(session_id, conv);
     res.writeHead(200, { ...CORS, 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
     const ev = (name, data) => res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -161,7 +161,7 @@ http.createServer(async (req, res) => {
       await sleep(SLOW ? 2200 : 900);
     }
     for (const chunk of ANSWERS[t].match(/[\s\S]{1,6}/g)) { ev('token', { type: 'token', content: chunk, data: {} }); await sleep(SLOW ? 45 : 18); }
-    ev('usage', { type: 'usage', content: '', data: { total_tokens: 9087, cost_usd: 0.0035 } });
+    ev('usage', { type: 'usage', content: '', data: { total_tokens: 9087, cost_usd: 0.0035, models: [{ model: 'gemini-2.5-flash', calls: 2 }, { model: 'gemini-2.5-flash-lite', calls: 1 }] } });
     ev('done', { type: 'done', content: '', data: { status: 'success', request_id: 'mock' } });
     return res.end();
   }
