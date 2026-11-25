@@ -23,3 +23,20 @@ spec:
   system: orchid
   consumesApis:
     - agency-api                                # the backend's public API (agency-backend)
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: agency-frontend-gitops
+  description: CD of agency-frontend — ArgoCD dev-agency-frontend (manual sync), prod via Promote
+  annotations:
+    github.com/project-slug: Everesto-Inc/agency-frontend-gitops
+    argocd/app-name: dev-agency-frontend
+    everesto.live/namespace: agency-frontend
+    everesto.live/url-dev: https://agency-frontend-dev.everesto.live
+    backstage.io/techdocs-ref: url:https://github.com/Everesto-Inc/agency-frontend-gitops/tree/main
+spec:
+  type: gitops
+  owner: orchid
+  system: orchid
+  dependsOn: [component:default/agency-frontend]
