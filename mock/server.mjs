@@ -82,6 +82,7 @@ const models = [
   ['gemini-2.5-flash', 'medium', 2900, 21.3, 0.004], ['gemini-2.5-flash-lite', 'low', 5100, 6.1, 0.002], ['gemini-2.5-pro', 'high', 310, 11, 0.01],
 ].map(([model, tier, calls, cost_usd, error_rate]) => ({ model, tier, calls, cost_usd, error_rate, cache_hit_rate: 0.1, share_of_cost: cost_usd / 38.4, prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }));
 
+const PIC = 'a'.repeat(64);
 const ANSWERS = {
   ev_research: `**Hyundai Ioniq 5 (2024), Germany**\n\n| Version | Battery | WLTP range |\n|---|---|---|\n| Standard | 63 kWh | 384 km |\n| Long Range RWD | 84 kWh | 570 km |\n\nCharging 10→80 % takes about **18 minutes** on a 350 kW charger. At German home prices (≈ 0.36 €/kWh) a full charge of the 84 kWh battery costs about **27 €**.`,
   product_finder: `Cheapest verified offers for **Sony WH-1000XM5** in France:\n\n1. **279 €** — shop A (in stock, free delivery)\n2. **289 €** — shop B (2–3 days)\n3. **299 €** — shop C\n\nPrices were checked on the shop pages a minute ago.`,
@@ -129,6 +130,11 @@ http.createServer(async (req, res) => {
   if (m === 'POST' && p === '/api/v1/auth/logout') return send(res, 204);
 
   const me = userOf(req);
+  // pictures are public (an <img> can't send a token), like the real API
+  if (m === 'GET' && p === `/api/v1/images/${PIC}`) {
+    res.writeHead(200, { ...CORS, 'content-type': 'image/svg+xml', 'cache-control': 'no-store' });
+    return res.end(`<svg xmlns="http://www.w3.org/2000/svg" width="480" height="270" viewBox="0 0 480 270"><defs><linearGradient id="g" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#2563eb"/><stop offset="1" stop-color="#7c3aed"/></linearGradient></defs><rect width="480" height="270" fill="url(#g)"/><rect x="70" y="140" width="340" height="60" rx="18" fill="#e2e8f0"/><path d="M130 140 L170 95 H310 L350 140 Z" fill="#cbd5e1"/><circle cx="150" cy="205" r="26" fill="#0f172a"/><circle cx="330" cy="205" r="26" fill="#0f172a"/><text x="240" y="255" font-family="sans-serif" font-size="16" fill="#fff" text-anchor="middle">mock picture · Ioniq 5</text></svg>`);
+  }
   if (!me) return fail(res, 401, 'UNAUTHORIZED', 'Not signed in');
 
   if (m === 'GET' && p === '/api/v1/auth/me') return send(res, 200, meOf(me));
@@ -151,7 +157,8 @@ http.createServer(async (req, res) => {
     const now = new Date().toISOString();
     const conv = hist.get(session_id) ?? { id: session_id, title: prompt.replace(/\s+/g, ' ').slice(0, 80), pinned: false, turns: 0, created_at: now, messages: [] };
     Object.assign(conv, { turns: conv.turns + 1, last_topic: t, updated_at: now });
-    conv.messages.push({ request_id: `m${Date.now()}`, topic: t, prompt, answer: ANSWERS[t], status: 'success', created_at: now, total_tokens: 9087, cost_usd: 0.0035, models: ['gemini-2.5-flash', 'gemini-2.5-flash-lite'] });
+    const answer = t === 'ev_research' && /picture|photo|image|show me/i.test(prompt) ? `${ANSWERS[t]}\n\n![2024 Hyundai Ioniq 5](/api/v1/images/${PIC})\n\n*Picture: example.com (mock)*` : ANSWERS[t];
+    conv.messages.push({ request_id: `m${Date.now()}`, topic: t, prompt, answer, status: 'success', created_at: now, total_tokens: 9087, cost_usd: 0.0035, models: ['gemini-2.5-flash', 'gemini-2.5-flash-lite'] });
     hist.set(session_id, conv);
     res.writeHead(200, { ...CORS, 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
     const ev = (name, data) => res.write(`event: ${name}\ndata: ${JSON.stringify(data)}\n\n`);
@@ -160,7 +167,7 @@ http.createServer(async (req, res) => {
       ev('status', { type: 'status', content: step, data: {} });
       await sleep(SLOW ? 2200 : 900);
     }
-    for (const chunk of ANSWERS[t].match(/[\s\S]{1,6}/g)) { ev('token', { type: 'token', content: chunk, data: {} }); await sleep(SLOW ? 45 : 18); }
+    for (const chunk of answer.match(/[\s\S]{1,6}/g)) { ev('token', { type: 'token', content: chunk, data: {} }); await sleep(SLOW ? 45 : 18); }
     ev('usage', { type: 'usage', content: '', data: { total_tokens: 9087, cost_usd: 0.0035, models: [{ model: 'gemini-2.5-flash', calls: 2 }, { model: 'gemini-2.5-flash-lite', calls: 1 }] } });
     ev('done', { type: 'done', content: '', data: { status: 'success', request_id: 'mock' } });
     return res.end();

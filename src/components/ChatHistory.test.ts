@@ -35,3 +35,15 @@ describe('modelsOf', () => {
     expect(modelsOf(undefined)).toEqual([]);
   });
 });
+
+describe('safeImageSrc', () => {
+  it('only lets our stored pictures through', async () => {
+    const { safeImageSrc } = await import('@/pages/ChatPage');
+    const id = 'f'.repeat(64);
+    expect(safeImageSrc(`/api/v1/images/${id}`, 'https://api.x')).toBe(`https://api.x/api/v1/images/${id}`);
+    expect(safeImageSrc('https://evil.example/track.png?c=secret', 'https://api.x')).toBeNull();
+    expect(safeImageSrc(`/api/v1/images/${id}?x=1`, 'https://api.x')).toBeNull();
+    expect(safeImageSrc('//evil.example/a.png')).toBeNull();
+    expect(safeImageSrc(undefined)).toBeNull();
+  });
+});

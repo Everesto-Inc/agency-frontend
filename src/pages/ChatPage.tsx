@@ -1,7 +1,8 @@
 import clsx from 'clsx';
 import { ArrowUp, Bot, History, Lock, Plus, Sparkles, Square } from 'lucide-react';
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
-import Markdown from 'react-markdown';
+import Markdown, { type Components } from 'react-markdown';
+import { apiUrl } from '@/config';
 import remarkGfm from 'remark-gfm';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router';
@@ -27,6 +28,25 @@ type Turn = {
 };
 
 type ModelUse = { model: string; calls?: number };
+
+/** Pure: a markdown image src → URL we may load, or null. Only pictures stored by our API are shown — an answer can
+ *  never make the browser load a third-party address (no tracking / data leaks through image links). */
+export function safeImageSrc(src: unknown, base: string = apiUrl): string | null {
+  return typeof src === 'string' && /^\/api\/v1\/images\/[0-9a-f]{64}$/.test(src) ? base + src : null;
+}
+
+const MD_COMPONENTS: Components = {
+  img: ({ src, alt }) => {
+    const url = safeImageSrc(src);
+    if (!url) return null;
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="my-2 block w-fit" title="Open full size">
+        <img src={url} alt={alt ?? ''} loading="lazy"
+             className="max-h-72 max-w-full rounded-lg border border-line bg-surface object-contain shadow-sm" />
+      </a>
+    );
+  },
+};
 const COLORS: LabelColor[] = ['green', 'yellow', 'purple', 'orange', 'blue', 'red'];
 
 /** Pure: the `models` of a usage event → [{ model, calls }] (ignores anything malformed). */
@@ -185,7 +205,7 @@ export default function ChatPage() {
                     {t.topic && <div className="mb-1.5"><Label color={colorOf(t.topic)}>{nameOf(t.topic)}</Label></div>}
                     {t.answer ? (
                       <div className={clsx('prose-answer text-[15px]', !t.done && 'streaming')}>
-                        <Markdown remarkPlugins={[remarkGfm]}>{t.answer}</Markdown>
+                        <Markdown remarkPlugins={[remarkGfm]} components={MD_COMPONENTS}>{t.answer}</Markdown>
                       </div>
                     ) : t.done && !t.error && <p className="text-sm italic text-muted">Answer text removed after the retention period</p>}
                     {t.error && <Alert>{t.error}</Alert>}
