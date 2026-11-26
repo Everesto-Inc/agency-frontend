@@ -75,7 +75,10 @@ export default function AdminRunsPage() {
                 <td className={clsx('text-right font-semibold tabular-nums', (r.latency_ms ?? 0) > 20000 ? 'text-red-500' : (r.latency_ms ?? 0) > 8000 ? 'text-orange-500' : '')}>{secs(r.latency_ms)}</td>
                 <td className="text-right tabular-nums">{r.llm_calls}</td>
                 <td className="text-right tabular-nums">{usd(r.cost_usd)}</td>
-                <td className="px-3"><Label color={r.status === 'success' ? 'green' : 'red'}>{r.cache_hit ? 'cached' : r.status}</Label></td>
+                <td className="px-3" title={r.error_message ?? undefined}>
+                  <Label color={r.status === 'success' ? 'green' : 'red'}>{r.cache_hit ? 'cached' : r.status}</Label>
+                  {r.error_code && <div className="mt-0.5 max-w-[14rem] truncate text-[11px] text-red-600 dark:text-red-400">{r.error_code}{r.error_message ? `: ${r.error_message}` : ''}</div>}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -105,6 +108,7 @@ function RunDialog({ run, onClose }: { run: Run; onClose: () => void }) {
           <div>
             <h2 className="text-lg font-bold">{run.prompt ?? run.request_id}</h2>
             <p className="text-xs text-muted">{run.topic} · {run.user_email} · {new Date(run.created_at).toLocaleString()} · {usd(run.cost_usd)}</p>
+            {run.error_code && <p className="mt-1 text-sm font-semibold text-red-600 dark:text-red-400">{run.error_code}{run.error_message ? ` — ${run.error_message}` : ''}</p>}
           </div>
           <button onClick={onClose} className="rounded-md px-2 text-xl leading-none text-muted hover:bg-brand-soft" aria-label="Close">×</button>
         </div>

@@ -1096,6 +1096,11 @@ export interface components {
             created_at: string;
             /** Error Code */
             error_code: string | null;
+            /**
+             * Error Message
+             * @description Why it failed, in words
+             */
+            error_message?: string | null;
             /** Feedback Score */
             feedback_score: number | null;
             /** Latency Ms */
